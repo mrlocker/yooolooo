@@ -1,0 +1,8 @@
+ {
+      "model":{
+          "output_units":17
+      },
+      "train":{
+          "epochs":10
+      }
+  }

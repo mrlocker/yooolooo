@@ -38,9 +38,10 @@ class Basic_Res():
         return shit
 
 class YOLO_V3():
-    def __init__(self):
-        pass
-    def construct_model(self,output_units=1000):
+    def __init__(self,config):
+        self.config = config
+        self.construct_model()
+    def construct_model(self):
 
         inputs = Input(shape=(256,256,3))
         shits = []
@@ -79,17 +80,18 @@ class YOLO_V3():
             shits.append(Basic_Res()(shits[-1], shits[-3]))
         #
         shits.append(GlobalAveragePooling2D()(shits[-1]))
+        output_units = self.config['model']['output_units']
         logits = Dense(units=output_units)(shits[-1])
         self.model = Model(inputs=inputs,outputs=logits)
         self.model.summary()
 
     def train(self,train_generator,val_generator):
-
+        config = self.config
         loss_func = tf.losses.softmax_cross_entropy
         self.model.compile(optimizer=Adam(),loss=loss_func,metrics=['accuracy'])
         self.model.fit_generator(generator=train_generator,
                                  steps_per_epoch=800/8,
-                                 epochs=2,
+                                 epochs=config['train']['epochs'],
                                  validation_data=val_generator,
                                  validation_steps=280/8,class_weight='auto')
         self.model.save_weights('fl_model.h5')
@@ -153,7 +155,4 @@ def prepare_data():
                                                       target_size=(256,256),batch_size=8)
     return train_generator,val_generator
 if __name__ == "__main__":
-    train_gen,val_gen =prepare_data()
-    a = YOLO_V3()
-    a.construct_model(output_units=17)
-    a.train(train_gen,val_gen)
+    pass
