@@ -3,11 +3,12 @@ from keras.layers import Conv2D,Input,BatchNormalization,\
     LeakyReLU,Add,GlobalAveragePooling2D,Dense,Activation
 from keras.models import Model
 from keras.optimizers import Adam
-
+from keras import backend as K
+from keras.preprocessing.image import load_img
 from keras.losses import categorical_crossentropy
 import tensorflow as tf
-
 import numpy as np
+from utils import preprocess,softmax
 
 class Basic_Conv():
     def __init__(self,filters,kernel_size,strides=(1,1),batch_normalize=True,
@@ -85,13 +86,47 @@ class YOLO_V3():
     def train(self,train_generator,val_generator):
 
         loss_func = tf.losses.softmax_cross_entropy
-        self.model.compile(optimizer=Adam(),loss=loss_func)
+        self.model.compile(optimizer=Adam(),loss=loss_func,metrics=['accuracy'])
         self.model.fit_generator(generator=train_generator,
                                  steps_per_epoch=800/8,
                                  epochs=2,
                                  validation_data=val_generator,
                                  validation_steps=280/8,class_weight='auto')
         self.model.save_weights('fl_model.h5')
+
+    def load_weights(self,path):
+        self.model.load_weights(path)
+    def evaluate(self,generator):
+        return self.model.evaluate_generator(generator)
+    def predict(self,image_path,threshold=0.5):
+        import random,os,cv2
+        true_class = random.randint(0,16)
+        target_folder = os.path.join(image_path,str(true_class))
+        files = os.listdir(target_folder)
+        fileindex = random.randint(0,len(files)-1)
+        target_path = os.path.join(target_folder,files[fileindex])
+        image = load_img(target_path,target_size=(256,256))
+
+        np_image = np.array(image)
+        image_for_cv2_show = np_image[:, :, ::-1].copy()
+
+        image = np.expand_dims(np_image,axis=0)
+        img = preprocess(image)
+        result = self.model.predict(img)
+        r = softmax(result)
+        cv2.imshow('result', image_for_cv2_show)
+
+        if np.max(r) > 0.5:
+            index = np.argmax(r)
+            pred_label = index
+            if pred_label == true_class:
+                message = " 🍺"
+            else:
+                message = " 💀"
+            print('真值：',true_class,'预测值：',pred_label,message)
+        else:
+            print('真值：',true_class,'预测值：无'," 💀")
+        cv2.waitKey(0)
 
 def prepare_data():
     from keras.preprocessing.image import ImageDataGenerator
@@ -111,6 +146,7 @@ def prepare_data():
                                        horizontal_flip=True,
                                        vertical_flip=True,
                                        preprocessing_function=lambda x:((x/255)-0.5)*2)
+    # 默认的color_mode是RGB
     train_generator = train_datagen.flow_from_directory(directory='./flowers17/train/',
                                                         target_size=(256,256),batch_size=8)
     val_generator   = val_datagen.flow_from_directory(directory='./flowers17/validation/',
