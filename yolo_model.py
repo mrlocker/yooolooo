@@ -2,12 +2,13 @@ import keras
 from keras.layers import Conv2D,Input,BatchNormalization,\
     LeakyReLU,Add,GlobalAveragePooling2D,Dense,Activation
 from keras.models import Model
-from keras.activations import relu,linear
+from keras.optimizers import Adam
+
+from keras.losses import categorical_crossentropy
+import tensorflow as tf
+
 import numpy as np
-def leaky_relu(x):
-    if x<0:
-        x = np.multiply(0.1,x)
-    return x
+
 class Basic_Conv():
     def __init__(self,filters,kernel_size,strides=(1,1),batch_normalize=True,
                  pad='same',activation='leaky'):
@@ -38,7 +39,7 @@ class Basic_Res():
 class YOLO_V3():
     def __init__(self):
         pass
-    def construct_model(self):
+    def construct_model(self,output_units=1000):
 
         inputs = Input(shape=(256,256,3))
         shits = []
@@ -77,12 +78,46 @@ class YOLO_V3():
             shits.append(Basic_Res()(shits[-1], shits[-3]))
         #
         shits.append(GlobalAveragePooling2D()(shits[-1]))
-        logits = Dense(units=1000)(shits[-1])
+        logits = Dense(units=output_units)(shits[-1])
         self.model = Model(inputs=inputs,outputs=logits)
         self.model.summary()
 
-    
+    def train(self,train_generator,val_generator):
 
+        loss_func = tf.losses.softmax_cross_entropy
+        self.model.compile(optimizer=Adam(),loss=loss_func)
+        self.model.fit_generator(generator=train_generator,
+                                 steps_per_epoch=800/8,
+                                 epochs=2,
+                                 validation_data=val_generator,
+                                 validation_steps=280/8,class_weight='auto')
+        self.model.save_weights('fl_model.h5')
+
+def prepare_data():
+    from keras.preprocessing.image import ImageDataGenerator
+    train_datagen = ImageDataGenerator(rotation_range=30,
+                                       width_shift_range=0.2,
+                                       height_shift_range=0.2,
+                                       shear_range=0.2,
+                                       zoom_range=0.2,
+                                       horizontal_flip=True,
+                                       vertical_flip=True,
+                                       preprocessing_function=lambda x:((x/255)-0.5)*2)
+    val_datagen = ImageDataGenerator(rotation_range=30,
+                                       width_shift_range=0.2,
+                                       height_shift_range=0.2,
+                                       shear_range=0.2,
+                                       zoom_range=0.2,
+                                       horizontal_flip=True,
+                                       vertical_flip=True,
+                                       preprocessing_function=lambda x:((x/255)-0.5)*2)
+    train_generator = train_datagen.flow_from_directory(directory='./flowers17/train/',
+                                                        target_size=(256,256),batch_size=8)
+    val_generator   = val_datagen.flow_from_directory(directory='./flowers17/validation/',
+                                                      target_size=(256,256),batch_size=8)
+    return train_generator,val_generator
 if __name__ == "__main__":
+    train_gen,val_gen =prepare_data()
     a = YOLO_V3()
-    a.construct_model()
+    a.construct_model(output_units=17)
+    a.train(train_gen,val_gen)
