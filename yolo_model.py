@@ -130,7 +130,7 @@ class YOLO_V3():
             print('真值：',true_class,'预测值：无'," 💀")
         cv2.waitKey(0)
 
-def prepare_data():
+def prepare_data(train_folder,val_folder):
     from keras.preprocessing.image import ImageDataGenerator
     train_datagen = ImageDataGenerator(rotation_range=30,
                                        width_shift_range=0.2,
@@ -149,9 +149,9 @@ def prepare_data():
                                        vertical_flip=True,
                                        preprocessing_function=lambda x:((x/255)-0.5)*2)
     # 默认的color_mode是RGB
-    train_generator = train_datagen.flow_from_directory(directory='./flowers17/train/',
+    train_generator = train_datagen.flow_from_directory(directory=train_folder,
                                                         target_size=(256,256),batch_size=8)
-    val_generator   = val_datagen.flow_from_directory(directory='./flowers17/validation/',
+    val_generator   = val_datagen.flow_from_directory(directory=val_folder,
                                                       target_size=(256,256),batch_size=8)
     return train_generator,val_generator
 if __name__ == "__main__":

@@ -3,6 +3,10 @@
           "output_units":17
       },
       "train":{
-          "epochs":10
+          "epochs":10,
+          "data_folder":"./flowers17/train/"
+      },
+      "val":{
+          "data_folder":"./flowers17/validation/"
       }
   }
