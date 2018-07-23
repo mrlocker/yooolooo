@@ -1,5 +1,6 @@
  {
       "model":{
+          "type":"detection",
           "output_units":17
       },
       "train":{
