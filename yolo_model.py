@@ -35,7 +35,7 @@ class Basic_Res():# same to [shortcut] in yolov3.cfg
     def __init__(self,activation='linear'):
         self.activation = activation
     def __call__(self, shitA,shitB):
-        shit = Concatenate()([shitA,shitB])
+        shit = Add()([shitA,shitB])
         if self.activation == "linear":
             shit = Activation(self.activation)(shit)
         return shit
