@@ -1,0 +1,27 @@
+<annotation>
+<folder />
+<filename>0002.bmp</filename>
+<path />
+<source>
+    <database>Unknown</database>
+</source>
+<size>
+    <width>236</width>
+    <height>140</height>
+    <depth>3</depth>
+</size>
+
+<segmented>0</segmented>
+    <object>
+    <name>HorizontalCrack</name>
+    <pose>Unspecified</pose>
+    <truncated>0</truncated>
+    <difficult>0</difficult>
+    <bndbox>
+        <xmin>1</xmin>
+        <ymin>51</ymin>
+        <xmax>179</xmax>
+        <ymax>78</ymax>
+    </bndbox>
+</object>
+</annotation>

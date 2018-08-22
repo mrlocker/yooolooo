@@ -7,6 +7,7 @@ from keras.optimizers import Adam
 from keras import backend as K
 from keras.preprocessing.image import load_img
 from keras.losses import categorical_crossentropy
+from keras.utils import plot_model
 import tensorflow as tf
 import numpy as np
 from utils import preprocess,softmax
@@ -54,79 +55,84 @@ class Basic_Detection():
 class YOLO_V3():
     def __init__(self,config):
         self.config = config
-        # self.construct_backbone()
+        self.shits = []
+        self.inputs = Input(shape=(256, 256, 3))
+
+        self.construct_backbone(self.inputs)
         self.construct_model()
-    def construct_model(self):
+    def construct_backbone(self,inputs):
+        self.shits.append(Basic_Conv(filters=32, kernel_size=3)(inputs))
 
-        inputs = Input(shape=(256,256,3))
-        shits = []
-        shits.append(Basic_Conv(filters=32,kernel_size=3)(inputs))
+        self.shits.append(Basic_Conv(filters=64, kernel_size=3, strides=(2, 2))(self.shits[-1]))
 
-        shits.append(Basic_Conv(filters=64, kernel_size=3, strides=(2, 2))(shits[-1]))
+        self.shits.append(Basic_Conv(filters=32, kernel_size=1)(self.shits[-1]))
+        self.shits.append(Basic_Conv(filters=64, kernel_size=3)(self.shits[-1]))
+        self.shits.append(Basic_Res()(self.shits[-1], self.shits[-3]))
 
-        shits.append(Basic_Conv(filters=32,kernel_size=1)(shits[-1]))
-        shits.append(Basic_Conv(filters=64,kernel_size=3)(shits[-1]))
-        shits.append(Basic_Res()(shits[-1],shits[-3]))
-
-        shits.append(Basic_Conv(filters=128,kernel_size=3,strides=2)(shits[-1]))
+        self.shits.append(Basic_Conv(filters=128, kernel_size=3, strides=2)(self.shits[-1]))
 
         for i in range(2):
-            shits.append(Basic_Conv(filters=64,kernel_size=1)(shits[-1]))
-            shits.append(Basic_Conv(filters=128,kernel_size=3)(shits[-1]))
-            shits.append(Basic_Res()(shits[-1],shits[-3]))
+            self.shits.append(Basic_Conv(filters=64, kernel_size=1)(self.shits[-1]))
+            self.shits.append(Basic_Conv(filters=128, kernel_size=3)(self.shits[-1]))
+            self.shits.append(Basic_Res()(self.shits[-1], self.shits[-3]))
 
         # yolov3.cfg 113~283
-        shits.append(Basic_Conv(filters=256,kernel_size=3,strides=2)(shits[-1]))
+        self.shits.append(Basic_Conv(filters=256, kernel_size=3, strides=2)(self.shits[-1]))
         for i in range(8):
-            shits.append(Basic_Conv(filters=128,kernel_size=1)(shits[-1]))
-            shits.append(Basic_Conv(filters=256,kernel_size=3)(shits[-1]))
-            shits.append(Basic_Res()(shits[-1],shits[-3]))
+            self.shits.append(Basic_Conv(filters=128, kernel_size=1)(self.shits[-1]))
+            self.shits.append(Basic_Conv(filters=256, kernel_size=3)(self.shits[-1]))
+            self.shits.append(Basic_Res()(self.shits[-1], self.shits[-3]))
         # yolov3.cfg 284~458
-        shits.append(Basic_Conv(filters=512,kernel_size=3,strides=2)(shits[-1]))
+        self.shits.append(Basic_Conv(filters=512, kernel_size=3, strides=2)(self.shits[-1]))
         for i in range(8):
-            shits.append(Basic_Conv(filters=256, kernel_size=1)(shits[-1]))
-            shits.append(Basic_Conv(filters=512, kernel_size=3)(shits[-1]))
-            shits.append(Basic_Res()(shits[-1], shits[-3]))
+            self.shits.append(Basic_Conv(filters=256, kernel_size=1)(self.shits[-1]))
+            self.shits.append(Basic_Conv(filters=512, kernel_size=3)(self.shits[-1]))
+            self.shits.append(Basic_Res()(self.shits[-1], self.shits[-3]))
         # yolov3.cfg 459~547
-        shits.append(Basic_Conv(filters=1024,kernel_size=3,strides=2)(shits[-1]))
+        self.shits.append(Basic_Conv(filters=1024, kernel_size=3, strides=2)(self.shits[-1]))
         for i in range(4):
-            shits.append(Basic_Conv(filters=512, kernel_size=1)(shits[-1]))
-            shits.append(Basic_Conv(filters=1024, kernel_size=3)(shits[-1]))
-            shits.append(Basic_Res()(shits[-1], shits[-3]))
+            self.shits.append(Basic_Conv(filters=512, kernel_size=1)(self.shits[-1]))
+            self.shits.append(Basic_Conv(filters=1024, kernel_size=3)(self.shits[-1]))
+            self.shits.append(Basic_Res()(self.shits[-1], self.shits[-3]))
         #
+        self.backbone = Model(inputs,self.shits[-1])
+    def construct_model(self):
+
+
         if self.config['model']['type'] == "classification":
-            shits.append(GlobalAveragePooling2D()(shits[-1]))
+            self.shits.append(GlobalAveragePooling2D()(self.shits[-1]))
             output_units = self.config['model']['output_units']
-            logits = Dense(units=output_units)(shits[-1])
-            self.model = Model(inputs=inputs,outputs=logits)
+            logits = Dense(units=output_units)(self.shits[-1])
+            self.model = Model(inputs=self.inputs,outputs=logits)
         elif self.config['model']['type'] == "detection":
             for i in range(3):
-                shits.append(Basic_Conv(filters=512,kernel_size=1)(shits[-1]))
-                shits.append(Basic_Conv(filters=1024,kernel_size=3)(shits[-1]))
-            shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(shits[-1]))
-            shits.append(Basic_Detection()(shits[-1]))#82 First Detection layer, anchors should be large(3 anchors)
+                self.shits.append(Basic_Conv(filters=512,kernel_size=1)(self.shits[-1]))
+                self.shits.append(Basic_Conv(filters=1024,kernel_size=3)(self.shits[-1]))
+            self.shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(self.shits[-1]))
+            self.shits.append(Basic_Detection()(self.shits[-1]))#82 First Detection layer, anchors should be large(3 anchors)
 
-            shits.append(Basic_Route()(shits[-4]))
-            shits.append(Basic_Conv(filters=256,kernel_size=1)(shits[-1]))
-            shits.append(UpSampling2D()(shits[-1]))
-            shits.append(Basic_Route()(shits[-1],shits[61]))
+            self.shits.append(Basic_Route()(self.shits[-4]))
+            self.shits.append(Basic_Conv(filters=256,kernel_size=1)(self.shits[-1]))
+            self.shits.append(UpSampling2D()(self.shits[-1]))
+            self.shits.append(Basic_Route()(self.shits[-1],self.shits[61]))
             for i in range(3):
-                shits.append(Basic_Conv(filters=256, kernel_size=1)(shits[-1]))
-                shits.append(Basic_Conv(filters=512, kernel_size=3)(shits[-1]))
-            shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(shits[-1]))
-            shits.append(Basic_Detection()(shits[-1]))#94 Second Detection layer, anchors should be medium(3 anchors)
+                self.shits.append(Basic_Conv(filters=256, kernel_size=1)(self.shits[-1]))
+                self.shits.append(Basic_Conv(filters=512, kernel_size=3)(self.shits[-1]))
+            self.shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(self.shits[-1]))
+            self.shits.append(Basic_Detection()(self.shits[-1]))#94 Second Detection layer, anchors should be medium(3 anchors)
 
-            shits.append(Basic_Route()(shits[-4]))
-            shits.append(Basic_Conv(filters=128,kernel_size=1)(shits[-1]))
-            shits.append(UpSampling2D()(shits[-1]))#out 52*52*128
-            shits.append(Basic_Route()(shits[-1],shits[36]))
+            self.shits.append(Basic_Route()(self.shits[-4]))
+            self.shits.append(Basic_Conv(filters=128,kernel_size=1)(self.shits[-1]))
+            self.shits.append(UpSampling2D()(self.shits[-1]))#out 52*52*128
+            self.shits.append(Basic_Route()(self.shits[-1],self.shits[36]))
             for i in range(3):
-                shits.append(Basic_Conv(filters=128, kernel_size=1)(shits[-1]))
-                shits.append(Basic_Conv(filters=256, kernel_size=3)(shits[-1]))
-            shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(shits[-1]))
-            shits.append(Basic_Detection()(shits[-1]))#106 Third Detection layer, anchors should be small(3 anchors)
-            self.model = Model(inputs=inputs,outputs=[shits[82],shits[94],shits[106]])
+                self.shits.append(Basic_Conv(filters=128, kernel_size=1)(self.shits[-1]))
+                self.shits.append(Basic_Conv(filters=256, kernel_size=3)(self.shits[-1]))
+            self.shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(self.shits[-1]))
+            self.shits.append(Basic_Detection()(self.shits[-1]))#106 Third Detection layer, anchors should be small(3 anchors)
+            self.model = Model(inputs=self.inputs,outputs=[self.shits[82],self.shits[94],self.shits[106]])
         self.model.summary()
+        plot_model(self.model)
 
     def train(self,train_generator,val_generator):
         config = self.config
