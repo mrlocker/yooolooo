@@ -11,6 +11,7 @@ from keras.utils import plot_model
 import tensorflow as tf
 import numpy as np
 from utils import preprocess,softmax
+from keras.models import load_model
 
 class Basic_Conv():
     def __init__(self,filters,kernel_size,strides=(1,1),batch_normalize=True,
@@ -24,12 +25,14 @@ class Basic_Conv():
     def __call__(self, food):
         shit = Conv2D(filters=self.filters,
                       kernel_size=self.kernel_size,
-                      strides=self.strides,padding=self.pad)(food)
+                      strides=self.strides,padding=self.pad,use_bias=False)(food)
+        shit = BatchNormalization()(shit)# 这里将BN放在了激活函数之前。和原作者代码保持一致
+
         if self.activation == 'leaky':
             shit = LeakyReLU(alpha=0.1)(shit)
         elif self.activation == 'linear':
             shit = Activation(self.activation)(shit)
-        shit = BatchNormalization()(shit)
+        # shit = BatchNormalization()(shit)# 这里将BN放在了激活函数之后。
 
         return shit
 class Basic_Res():# same to [shortcut] in yolov3.cfg
@@ -52,15 +55,28 @@ class Basic_Detection():
     # TODO:待添加真正的检测代码
     def __call__(self, shit):
         return shit
+
 class YOLO_V3():
     def __init__(self,config):
         self.config = config
         self.shits = []
         self.inputs = Input(shape=(256, 256, 3))
-
+        # yolo算法采用前后端分离。后端指的是主干网络。主干网络配合不同的前端，可以实现分类或者检测的目的。
         self.construct_backbone(self.inputs)
-        self.construct_model()
+        # 载入预训练模型参数（仅主干网络）
+        self.backbone.load_weights('weights/darknet53.h5',by_name=True)
+        if self.config['model']['type'] == "classification":
+            self.construct_classification_model()
+            official_backbone = load_model('weights/darknet53.h5',compile=False)
+            official_backbone.summary(positions=[.33, .6, .7, 1])
+            # a=0
+        elif self.config['model']['type'] == "detection":
+            self.construct_detection_model()
+
+        exit()
+
     def construct_backbone(self,inputs):
+        # 该主干网络和yolo v3论文上花的那个图一模一样。不包括最后三层，那三层放到了前端里面
         self.shits.append(Basic_Conv(filters=32, kernel_size=3)(inputs))
 
         self.shits.append(Basic_Conv(filters=64, kernel_size=3, strides=(2, 2))(self.shits[-1]))
@@ -96,43 +112,47 @@ class YOLO_V3():
             self.shits.append(Basic_Res()(self.shits[-1], self.shits[-3]))
         #
         self.backbone = Model(inputs,self.shits[-1])
-    def construct_model(self):
+    def construct_classification_model(self):
+        self.shits.append(GlobalAveragePooling2D()(self.shits[-1]))
+        output_units = self.config['model']['output_units']
+        logits = Dense(units=output_units)(self.shits[-1])
+        self.model = Model(inputs=self.inputs,outputs=logits)
+        self.model.summary()
 
+        plot_model(self.model)
+        print("分类网络组建完毕")
+    def construct_detection_model(self):
 
-        if self.config['model']['type'] == "classification":
-            self.shits.append(GlobalAveragePooling2D()(self.shits[-1]))
-            output_units = self.config['model']['output_units']
-            logits = Dense(units=output_units)(self.shits[-1])
-            self.model = Model(inputs=self.inputs,outputs=logits)
-        elif self.config['model']['type'] == "detection":
-            for i in range(3):
-                self.shits.append(Basic_Conv(filters=512,kernel_size=1)(self.shits[-1]))
-                self.shits.append(Basic_Conv(filters=1024,kernel_size=3)(self.shits[-1]))
-            self.shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(self.shits[-1]))
-            self.shits.append(Basic_Detection()(self.shits[-1]))#82 First Detection layer, anchors should be large(3 anchors)
+        for i in range(3):
+            self.shits.append(Basic_Conv(filters=512,kernel_size=1)(self.shits[-1]))
+            self.shits.append(Basic_Conv(filters=1024,kernel_size=3)(self.shits[-1]))
+        self.shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(self.shits[-1]))
+        self.shits.append(Basic_Detection()(self.shits[-1]))#82 First Detection layer, anchors should be large(3 anchors)
 
-            self.shits.append(Basic_Route()(self.shits[-4]))
-            self.shits.append(Basic_Conv(filters=256,kernel_size=1)(self.shits[-1]))
-            self.shits.append(UpSampling2D()(self.shits[-1]))
-            self.shits.append(Basic_Route()(self.shits[-1],self.shits[61]))
-            for i in range(3):
-                self.shits.append(Basic_Conv(filters=256, kernel_size=1)(self.shits[-1]))
-                self.shits.append(Basic_Conv(filters=512, kernel_size=3)(self.shits[-1]))
-            self.shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(self.shits[-1]))
-            self.shits.append(Basic_Detection()(self.shits[-1]))#94 Second Detection layer, anchors should be medium(3 anchors)
+        self.shits.append(Basic_Route()(self.shits[-4]))
+        self.shits.append(Basic_Conv(filters=256,kernel_size=1)(self.shits[-1]))
+        self.shits.append(UpSampling2D()(self.shits[-1]))
+        self.shits.append(Basic_Route()(self.shits[-1],self.shits[61]))
+        for i in range(3):
+            self.shits.append(Basic_Conv(filters=256, kernel_size=1)(self.shits[-1]))
+            self.shits.append(Basic_Conv(filters=512, kernel_size=3)(self.shits[-1]))
+        self.shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(self.shits[-1]))
+        self.shits.append(Basic_Detection()(self.shits[-1]))#94 Second Detection layer, anchors should be medium(3 anchors)
 
-            self.shits.append(Basic_Route()(self.shits[-4]))
-            self.shits.append(Basic_Conv(filters=128,kernel_size=1)(self.shits[-1]))
-            self.shits.append(UpSampling2D()(self.shits[-1]))#out 52*52*128
-            self.shits.append(Basic_Route()(self.shits[-1],self.shits[36]))
-            for i in range(3):
-                self.shits.append(Basic_Conv(filters=128, kernel_size=1)(self.shits[-1]))
-                self.shits.append(Basic_Conv(filters=256, kernel_size=3)(self.shits[-1]))
-            self.shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(self.shits[-1]))
-            self.shits.append(Basic_Detection()(self.shits[-1]))#106 Third Detection layer, anchors should be small(3 anchors)
-            self.model = Model(inputs=self.inputs,outputs=[self.shits[82],self.shits[94],self.shits[106]])
+        self.shits.append(Basic_Route()(self.shits[-4]))
+        self.shits.append(Basic_Conv(filters=128,kernel_size=1)(self.shits[-1]))
+        self.shits.append(UpSampling2D()(self.shits[-1]))#out 52*52*128
+        self.shits.append(Basic_Route()(self.shits[-1],self.shits[36]))
+        for i in range(3):
+            self.shits.append(Basic_Conv(filters=128, kernel_size=1)(self.shits[-1]))
+            self.shits.append(Basic_Conv(filters=256, kernel_size=3)(self.shits[-1]))
+        self.shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(self.shits[-1]))
+        self.shits.append(Basic_Detection()(self.shits[-1]))#106 Third Detection layer, anchors should be small(3 anchors)
+        self.model = Model(inputs=self.inputs,outputs=[self.shits[82],self.shits[94],self.shits[106]])
+
         self.model.summary()
         plot_model(self.model)
+        print("目标检测网络构建完毕")
 
     def train(self,train_generator,val_generator):
         config = self.config

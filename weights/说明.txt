@@ -1,0 +1,2 @@
+weights扩展名是从yolo官网下载的参数。
+h5扩展名是用https://github.com/qqwweee/keras-yolo3提供的工具转换成keras能用的参数
