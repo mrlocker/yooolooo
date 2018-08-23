@@ -1,15 +1,16 @@
 from yolo_model import YOLO_V3,prepare_data
 from keras.optimizers import Adam
 import tensorflow as tf
+from utils import load_json
+
 
 if __name__ == "__main__":
-    yolo =YOLO_V3()
-    yolo.construct_model(output_units=17)
-    yolo.model.compile(optimizer=Adam(), loss=tf.losses.softmax_cross_entropy)
+    config = load_json('./config.json')
+    train_gen, val_gen = prepare_data(config['train']['data_folder'],config['val']['data_folder'])
+    yolo = YOLO_V3(config=config)
 
-    yolo.load_weights('fl_model.h5')
+    yolo.load_weights('tmp/fl_ckpt.h5')
 
-    _,val_gen =prepare_data()
-    result = yolo.model.predict_generator(val_gen)
-    # result = yolo.evaluate(val_gen)
+    # result = yolo.model.predict_generator(val_gen)
+    result = yolo.evaluate(val_gen)
     print(result)

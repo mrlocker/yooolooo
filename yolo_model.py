@@ -2,16 +2,17 @@ import keras
 from keras.layers import Conv2D,Input,BatchNormalization,\
     LeakyReLU,Add,GlobalAveragePooling2D,Dense,Activation,\
     UpSampling2D,Concatenate
-from keras.models import Model
+from keras.models import Model,load_model
 from keras.optimizers import Adam
 from keras import backend as K
 from keras.preprocessing.image import load_img
 from keras.losses import categorical_crossentropy
 from keras.utils import plot_model
+from keras.callbacks import ModelCheckpoint, LearningRateScheduler,TensorBoard,ReduceLROnPlateau
+
 import tensorflow as tf
 import numpy as np
 from utils import preprocess,softmax
-from keras.models import load_model
 
 class Basic_Conv():
     def __init__(self,filters,kernel_size,strides=(1,1),batch_normalize=True,
@@ -27,7 +28,6 @@ class Basic_Conv():
                       kernel_size=self.kernel_size,
                       strides=self.strides,padding=self.pad,use_bias=False)(food)
         shit = BatchNormalization()(shit)# 这里将BN放在了激活函数之前。和原作者代码保持一致
-
         if self.activation == 'leaky':
             shit = LeakyReLU(alpha=0.1)(shit)
         elif self.activation == 'linear':
@@ -64,16 +64,16 @@ class YOLO_V3():
         # yolo算法采用前后端分离。后端指的是主干网络。主干网络配合不同的前端，可以实现分类或者检测的目的。
         self.construct_backbone(self.inputs)
         # 载入预训练模型参数（仅主干网络）
-        self.backbone.load_weights('weights/darknet53.h5',by_name=True)
         if self.config['model']['type'] == "classification":
             self.construct_classification_model()
-            official_backbone = load_model('weights/darknet53.h5',compile=False)
-            official_backbone.summary(positions=[.33, .6, .7, 1])
-            # a=0
         elif self.config['model']['type'] == "detection":
             self.construct_detection_model()
+        self.load_pretrain_weights()
 
-        exit()
+        # official_backbone = load_model('weights/darknet53.h5',compile=False)
+        # official_backbone.summary(positions=[.33, .6, .7, 1])
+        # a=0
+        # exit()
 
     def construct_backbone(self,inputs):
         # 该主干网络和yolo v3论文上花的那个图一模一样。不包括最后三层，那三层放到了前端里面
@@ -157,22 +157,48 @@ class YOLO_V3():
     def train(self,train_generator,val_generator):
         config = self.config
         loss_func = tf.losses.softmax_cross_entropy
+        checkpoint = ModelCheckpoint(filepath='./tmp/fl_ckpt.h5', monitor='val_acc',
+                                     verbose=1, save_best_only=False)
+
+        def lr_sch(epoch):
+            # 200 total
+            if epoch < 50:
+                return 1e-3
+            if 50 <= epoch < 100:
+                return 1e-4
+            if epoch >= 100:
+                return 1e-5
+
+        lr_scheduler = LearningRateScheduler(lr_sch)
+        lr_reducer = ReduceLROnPlateau(monitor='val_acc', factor=0.2, patience=5,
+                                       mode='max', min_lr=1e-3)
+        tb = TensorBoard(log_dir='./logs',write_graph=False)
+        callbacks = [checkpoint, lr_scheduler, lr_reducer,tb]
         self.model.compile(optimizer=Adam(),loss=loss_func,metrics=['accuracy'])
         self.model.fit_generator(generator=train_generator,
                                  steps_per_epoch=800/8,
                                  epochs=config['train']['epochs'],
                                  validation_data=val_generator,
-                                 validation_steps=280/8,class_weight='auto')
+                                 validation_steps=280/8,class_weight='auto',
+                                 callbacks=callbacks)
         self.model.save_weights('fl_model.h5')
 
+    def load_pretrain_weights(self):
+        # 加载预训练参数。首先加载完全模型的参数，如果没有再加载主干网络的参数。
+        if self.config['model']['pretrain_full'] != "":
+            self.model.load_weights(self.config['model']['pretrain_full'])
+        elif self.config['model']['pretrain_backbone'] != "":
+            self.backbone.load_weights(self.config['model']['pretrain_backbone'],by_name=True)
+        else:
+            print('！！未加载预训练参数')
     def load_weights(self,path):
         self.model.load_weights(path)
     def evaluate(self,generator):
         return self.model.evaluate_generator(generator)
-    def predict(self,image_path,threshold=0.5):
+    def predict(self,image_path,class_indices,threshold=0.5):
         import random,os,cv2
-        true_class = random.randint(0,16)
-        target_folder = os.path.join(image_path,str(true_class))
+        true_class = str(random.randint(0,16))
+        target_folder = os.path.join(image_path,true_class)
         files = os.listdir(target_folder)
         fileindex = random.randint(0,len(files)-1)
         target_path = os.path.join(target_folder,files[fileindex])
@@ -186,15 +212,16 @@ class YOLO_V3():
         result = self.model.predict(img)
         r = softmax(result)
         cv2.imshow('result', image_for_cv2_show)
+        true_index = class_indices[true_class]# get one classes's index
+        index_classe = dict(zip(class_indices.values(), class_indices.keys()))
 
         if np.max(r) > 0.5:
-            index = np.argmax(r)
-            pred_label = index
-            if pred_label == true_class:
+            pred_index = np.argmax(r)
+            if pred_index == true_index:
                 message = " 🍺"
             else:
                 message = " 💀"
-            print('真值：',true_class,'预测值：',pred_label,message)
+            print('真值种类名称：',true_class,'预测类别名称：',index_classe[pred_index],message)
         else:
             print('真值：',true_class,'预测值：无'," 💀")
         cv2.waitKey(0)

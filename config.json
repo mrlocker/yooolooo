@@ -1,7 +1,9 @@
  {
       "model":{
           "type":"classification",
-          "output_units":17
+          "output_units":17,
+          "pretrain_backbone":"weights/darknet53.h5",
+          "pretrain_full":"tmp/fl.h5"
       },
       "train":{
           "epochs":10,
