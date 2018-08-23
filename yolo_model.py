@@ -182,7 +182,8 @@ class YOLO_V3():
                                  validation_steps=280/8,class_weight='auto',
                                  callbacks=callbacks)
         self.model.save_weights('fl_model.h5')
-
+    def train_detection(self):
+        pass
     def load_pretrain_weights(self):
         # 加载预训练参数。首先加载完全模型的参数，如果没有再加载主干网络的参数。
         if self.config['model']['pretrain_full'] != "":
