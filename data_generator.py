@@ -83,6 +83,7 @@ class St_Generator(Sequence):
         self.image_size = config['model']['image_size']
         self.grid       = config['model']['grid']
         self.classes    = config['model']['classes']
+        self.anchors    = config['model']['anchors']
         if shuffle:
             random.seed(time.time())
             random.shuffle(image_anno_list)
@@ -95,7 +96,7 @@ class St_Generator(Sequence):
 
     def __getitem__(self, idx):
         x_batch = np.zeros(shape=(self.batch_size,self.image_size[0],self.image_size[1],3))
-        y_batch = np.zeros(shape=(self.batch_size,self.grid,self.grid,3,4+1+len(self.classes)))#8*13*13*3*8 batch size*grid width*grid height*anchors*classes
+        y_batch = np.zeros(shape=(self.batch_size,self.grid,self.grid,3,4+1+len(self.classes)))#8*13*13*3*(4+1+classes) batch size*grid width*grid height*anchors*(4+1+classes)
         images = []
         images_bboxes = []
         images_labels = []
@@ -113,9 +114,11 @@ class St_Generator(Sequence):
         self.aug_bbses = aug_pipe_det.augment_bounding_boxes(images_bboxes)
         self.aug_labels = images_labels
         # 至此，扩增完毕
-        pass
 
-            # x_batch[i] = img
+        for i,img in enumerate(self.aug_imgs):
+            x_batch[i] = img
+        self.create_y_true(self.aug_bbses,self.aug_labels,self.anchors)
+        pass
 
     def __len__(self):
         pass
@@ -212,6 +215,28 @@ class St_Generator(Sequence):
         bboxes = ia.BoundingBoxesOnImage(tmp_bbox, shape=annos[0]['img_shape'])
         return bboxes, labels
 
+    def create_y_true(self,aug_bbses,aug_labels,anchors):
+        cell_size = self.image_size[0]/self.grid
+        y_batch = np.zeros(shape=(self.batch_size,self.grid,self.grid,3,4+1+len(self.classes)))#8*13*13*3*(4+1+classes) batch size*grid width*grid height*anchors*(4+1+classes)
+        for i in range(len(aug_bbses)):#循环每一张图像对应的bboxes
+            for j in range(len(aug_bbses[i].bounding_boxes)):#循环单张图像上所有的bbox
+                rice = np.zeros(4+1+len(self.classes))#一个anchor中的内容
+                rice[4] = 1# set confidence
+                label_index = self.classes.index(aug_labels[i][j])
+                rice[5+label_index]=1   # set one-hot label
+
+                bbox = aug_bbses[i].bounding_boxes[j]
+                # calc cell index start from 0
+                cx = np.floor(bbox.center_x/cell_size)
+                cy = np.floor(bbox.center_y/cell_size)
+                x_new = (bbox.center_x-cx*cell_size)/cell_size  # scale to 0~1 (relative to cell size)
+                y_new = (bbox.center_y-cy*cell_size)/cell_size
+                w_new = bbox.width/cell_size                    # scale to 0~13 (grid size)
+                h_new = bbox.height/cell_size
+                rice[0:4]=[x_new,y_new,w_new,h_new]
+
+                anchors
+                pass
 def draw_aug_bboxes(aug_img, bboxes,labels):
     pred_color = (255,255,255)
     for i,rect in enumerate(bboxes.bounding_boxes):
