@@ -1,6 +1,8 @@
 import numpy as np
 import os
 import cv2
+import imgaug as ia
+
 def preprocess(x):
     return ((x/255)-0.5)*2
 
@@ -60,9 +62,14 @@ def rect_interaction(rect1, rect2, gap=0):
         return (b - a) * (d - c)
     else:
         return -1
+
+def iou(rect1,rect2):
+    bbox1 = ia.BoundingBox(rect1[0],rect1[1],rect1[2],rect1[3])
+    bbox2 = ia.BoundingBox(rect2[0],rect2[1],rect2[2],rect2[3])
+    area = rect_interaction(rect1,rect2)
+    if area == -1:
+        return 0
+    else:
+        return area/(bbox1.area + bbox2.area -area)
 if __name__ == "__main__":
-    a = np.array([2,4,5,7,9])
-    b = softmax(a)
-    if np.max(b)>0.5:
-        index = np.argmax(b)
     pass
