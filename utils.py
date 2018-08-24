@@ -45,6 +45,21 @@ def draw_detections(bg, detections, gt,hide_gt=False,hide_confidence=False):
             cv2.putText(bg,''+rect[4],(rect[0]+1,rect[3]-2),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,255,0))
 
     return bg
+# 判断两矩形是否相交，若相交返回相交面积，否则返回-1,gap表示两个矩形之间如果有gap大小的距离也算相交
+def rect_interaction(rect1, rect2, gap=0):
+    #  rect1 = [x1,y1,x2,y2]  x1,y1 左上角矩形坐标 x2,y2 右下角矩形坐标
+    x1, y1, x2, y2 = rect1[0] - gap, rect1[1] - gap, rect1[2] + gap, rect1[3] + gap
+    x3, y3, x4, y4 = rect2[0] - gap, rect2[1] - gap, rect2[2] + gap, rect2[3] + gap
+
+    a = max(x1, x3)
+    b = min(x2, x4)
+    c = max(y1, y3)
+    d = min(y2, y4)
+
+    if a - b <= 0 and c - d <= 0:
+        return (b - a) * (d - c)
+    else:
+        return -1
 if __name__ == "__main__":
     a = np.array([2,4,5,7,9])
     b = softmax(a)
