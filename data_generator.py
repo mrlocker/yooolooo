@@ -94,6 +94,8 @@ class St_Generator(Sequence):
                                         sometimes(iaa.Flipud(p=1)),
                                         iaa.Scale({"height": self.image_size[0], "width": self.image_size[1]})])
 
+    def __len__(self):
+        return int(len(self.image_anno_list)/self.batch_size)
     def __getitem__(self, idx):
         x_batch = np.zeros(shape=(self.batch_size,self.image_size[0],self.image_size[1],3))
         y_batch = np.zeros(shape=(self.batch_size,self.grid,self.grid,3,4+1+len(self.classes)))#8*13*13*3*(4+1+classes) batch size*grid width*grid height*anchors*(4+1+classes)
@@ -117,11 +119,9 @@ class St_Generator(Sequence):
 
         for i,img in enumerate(self.aug_imgs):
             x_batch[i] = img
-        self.create_y_true(self.aug_bbses,self.aug_labels,self.anchors)
-        pass
+        y_batches = self.create_y_true(self.aug_bbses,self.aug_labels,self.anchors)
+        return x_batch,y_batches #ybatches order in Large anchor,medium anchor,small anchor
 
-    def __len__(self):
-        pass
     def on_epoch_end(self):# modify dataset at each end of the epoch
         pass
     # def aug_image(self,l_bound,r_bound):
@@ -216,9 +216,9 @@ class St_Generator(Sequence):
         return bboxes, labels
 
     def create_y_true(self,aug_bbses,aug_labels,anchors):
-        cell_size = self.image_size[0]/self.grid
         # 3 y_batch,for 3 scale.First for large anchors, second for medium anchor, last for small anchors
-        y_batches = [np.zeros(shape=(self.batch_size,self.grid,self.grid,3,4+1+len(self.classes))) for l in range(3)]#8*13*13*3*(4+1+classes) batch size*grid width*grid height*anchors*(4+1+classes)
+        # grids are 13*13 26*26 52*52
+        y_batches = [np.zeros(shape=(self.batch_size,self.grid*(2**l),self.grid*(2**l),3,4+1+len(self.classes))) for l in range(3)]#8*13*13*3*(4+1+classes) batch size*grid width*grid height*anchors*(4+1+classes)
 
         for i in range(len(aug_bbses)):#循环每一张图像对应的bboxes,每次一个batch中的一张，i即index of batch
             for j in range(len(aug_bbses[i].bounding_boxes)):#循环单张图像上所有的bbox
@@ -227,20 +227,12 @@ class St_Generator(Sequence):
                 label_index = self.classes.index(aug_labels[i][j])
                 rice[5+label_index]=1   # set one-hot label
 
-                bbox = aug_bbses[i].bounding_boxes[j]
-                # calc cell index start from 0
-                cx = int(np.floor(bbox.center_x/cell_size))
-                cy = int(np.floor(bbox.center_y/cell_size))
-                x_new = (bbox.center_x-cx*cell_size)/cell_size  # scale to 0~1 (relative to cell size)
-                y_new = (bbox.center_y-cy*cell_size)/cell_size
-                w_new = bbox.width/cell_size                    # scale to 0~13 (grid size)
-                h_new = bbox.height/cell_size
-                rice[0:4]=[x_new,y_new,w_new,h_new]
-
                 max_iou = 0
-                anchor_index = -1# should be 0,1,2,3,4,5,6,7,8
+                anchor_index = -1# should be 0,1,2, 3,4,5, 6,7,8
+                bbox = aug_bbses[i].bounding_boxes[j]
+
                 for k in range(0,len(anchors),2):
-                    rect1 = [0,0,w_new,h_new]
+                    rect1 = [0,0,bbox.width,bbox.height]
                     rect2 = [0,0,anchors[k],anchors[k+1]]
                     current_iou = utils.iou(rect1,rect2)
                     if current_iou>max_iou:
@@ -251,13 +243,28 @@ class St_Generator(Sequence):
                     y_batch_index = 2
                 elif y_batch_index == 2:
                     y_batch_index = 0
-                real_index = int(anchor_index%3)
-                y_batches[y_batch_index][i][cy][cx][real_index] = rice  # TODO:cx cy or cy cx?
-                check_grid(self.aug_imgs[i],self.aug_bbses[i],self.aug_labels[i],cx,cy,self.grid)
+                inner_index = int(anchor_index%3)
+
+                # different scales have different cell sizes
+                cell_size = self.image_size[0] / (self.grid*(2**y_batch_index))
+
+                # calc cell index start from 0
+                cx = int(np.floor(bbox.center_x/cell_size))
+                cy = int(np.floor(bbox.center_y/cell_size))
+                x_new = (bbox.center_x-cx*cell_size)/cell_size  # scale to 0~1 (relative to cell size)
+                y_new = (bbox.center_y-cy*cell_size)/cell_size
+                w_new = bbox.width/cell_size                    # scale to 0~13 (grid size)
+                h_new = bbox.height/cell_size
+                rice[0:4]=[x_new,y_new,w_new,h_new]
+
+
+                y_batches[y_batch_index][i][cy][cx][inner_index] = rice  # TODO:cx cy or cy cx? seems cy cx is right
+                # check_grid(self.aug_imgs[i],self.aug_bbses[i],self.aug_labels[i],cx, cy,self.grid*(2**y_batch_index))
         return y_batches
     def choose_anchor(self):
         pass
 def check_grid(img,bbs,labels,cx,cy,grid):
+    img = img.copy()
     w,h,_ = img.shape
     cellsize = int(w/grid)
     x1 = int(cx*cellsize)
@@ -270,7 +277,6 @@ def check_grid(img,bbs,labels,cx,cy,grid):
     for i in range(grid):
         img = cv2.line(img,(i*cellsize,0),(i*cellsize,h-1),color=(0,255,0))
         img = cv2.line(img,(0,i*cellsize),(h-1,i*cellsize),color=(0,255,0))
-
     cv2.imshow('aug img',img)
     cv2.imshow('cell',roi)
     cv2.waitKey(0)
@@ -279,11 +285,12 @@ def draw_aug_bboxes(aug_img, bboxes,labels):
     for i,rect in enumerate(bboxes.bounding_boxes):
         cv2.rectangle(aug_img, pt1=(rect.x1, rect.y1), pt2=(rect.x2, rect.y2), color=pred_color, thickness=2)
         cv2.putText(aug_img, labels[i] + ' ', (rect.x1 + 2, rect.y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, pred_color)
+        cv2.circle(aug_img,center=(int(rect.center_x),int(rect.center_y)),radius=1,color=(0,0,255),thickness=-1)
 
     return aug_img
 
 if __name__ == "__main__":
-    config = load_json('./miniset/test_config3.json')
+    config = load_json('./config_detection.json')
     image_extention='bmp'
     img_list = get_dir_filelist_by_extension(dir=config['train']['data_folder']+'/images',ext=image_extention)
     img_list.sort()
@@ -296,7 +303,8 @@ if __name__ == "__main__":
             'anno_path':anno_path
         })
     gen = St_Generator(all_image_and_anno_paths,config)
-    gen.__getitem__(0)
+    print('len:',len(gen))
+    one_batch = gen.__getitem__(0)
     for i in range(5):
         img = gen.aug_imgs[i]
         img_annos = gen.aug_bbses[i]

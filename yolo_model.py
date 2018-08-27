@@ -1,12 +1,12 @@
 import keras
 from keras.layers import Conv2D,Input,BatchNormalization,\
     LeakyReLU,Add,GlobalAveragePooling2D,Dense,Activation,\
-    UpSampling2D,Concatenate
+    UpSampling2D,Concatenate,Reshape
 from keras.models import Model,load_model
 from keras.optimizers import Adam
 from keras import backend as K
 from keras.preprocessing.image import load_img
-from keras.losses import categorical_crossentropy
+from keras.losses import categorical_crossentropy,mean_squared_error
 from keras.utils import plot_model
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler,TensorBoard,ReduceLROnPlateau
 
@@ -54,13 +54,17 @@ class Basic_Route():# same to [route] in yolov3.cfg
 class Basic_Detection():
     # TODO:待添加真正的检测代码
     def __call__(self, shit):
+        # shit = np.reshape(shit,newshape=(shit.shape[0], shit.shape[1], shit.shape[2], 3, int(shit.shape[3] / 3)))
+        shit = Reshape((shit.shape.dims[1].value, shit.shape.dims[2].value, 3, int(shit.shape.dims[3].value / 3)))(shit)
         return shit
 
 class YOLO_V3():
     def __init__(self,config):
         self.config = config
         self.shits = []
-        self.inputs = Input(shape=(256, 256, 3))
+        self.inputs = Input(shape=(self.config['model']['image_size'][0], self.config['model']['image_size'][1], 3))
+        self.num_classes = len(self.config['model']['classes'])
+
         # yolo算法采用前后端分离。后端指的是主干网络。主干网络配合不同的前端，可以实现分类或者检测的目的。
         self.construct_backbone(self.inputs)
         # 载入预训练模型参数（仅主干网络）
@@ -126,9 +130,9 @@ class YOLO_V3():
         for i in range(3):
             self.shits.append(Basic_Conv(filters=512,kernel_size=1)(self.shits[-1]))
             self.shits.append(Basic_Conv(filters=1024,kernel_size=3)(self.shits[-1]))
-        self.shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(self.shits[-1]))
+        self.shits.append(Basic_Conv(filters=3*(4+1+self.num_classes),kernel_size=1,activation='linear')(self.shits[-1]))
         self.shits.append(Basic_Detection()(self.shits[-1]))#82 First Detection layer, anchors should be large(3 anchors)
-
+        ##################################################
         self.shits.append(Basic_Route()(self.shits[-4]))
         self.shits.append(Basic_Conv(filters=256,kernel_size=1)(self.shits[-1]))
         self.shits.append(UpSampling2D()(self.shits[-1]))
@@ -136,9 +140,9 @@ class YOLO_V3():
         for i in range(3):
             self.shits.append(Basic_Conv(filters=256, kernel_size=1)(self.shits[-1]))
             self.shits.append(Basic_Conv(filters=512, kernel_size=3)(self.shits[-1]))
-        self.shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(self.shits[-1]))
+        self.shits.append(Basic_Conv(filters=3*(4+1+self.num_classes),kernel_size=1,activation='linear')(self.shits[-1]))
         self.shits.append(Basic_Detection()(self.shits[-1]))#94 Second Detection layer, anchors should be medium(3 anchors)
-
+        ##################################################
         self.shits.append(Basic_Route()(self.shits[-4]))
         self.shits.append(Basic_Conv(filters=128,kernel_size=1)(self.shits[-1]))
         self.shits.append(UpSampling2D()(self.shits[-1]))#out 52*52*128
@@ -146,8 +150,9 @@ class YOLO_V3():
         for i in range(3):
             self.shits.append(Basic_Conv(filters=128, kernel_size=1)(self.shits[-1]))
             self.shits.append(Basic_Conv(filters=256, kernel_size=3)(self.shits[-1]))
-        self.shits.append(Basic_Conv(filters=13*13*(3*(4+1+80)),kernel_size=1,activation='linear')(self.shits[-1]))
+        self.shits.append(Basic_Conv(filters=3*(4+1+self.num_classes),kernel_size=1,activation='linear')(self.shits[-1]))
         self.shits.append(Basic_Detection()(self.shits[-1]))#106 Third Detection layer, anchors should be small(3 anchors)
+        ##################################################
         self.model = Model(inputs=self.inputs,outputs=[self.shits[82],self.shits[94],self.shits[106]])
 
         self.model.summary()
@@ -182,8 +187,9 @@ class YOLO_V3():
                                  validation_steps=280/8,class_weight='auto',
                                  callbacks=callbacks)
         self.model.save_weights('fl_model.h5')
-    def train_detection(self):
-        pass
+    def train_detection(self,train_generator,val_generator):
+        self.model.compile(optimizer=Adam(),loss=[self.yolo_loss,self.yolo_loss,self.yolo_loss])
+        self.model.fit_generator(generator=train_generator,epochs=self.config['train']['epochs'])
     def load_pretrain_weights(self):
         # 加载预训练参数。首先加载完全模型的参数，如果没有再加载主干网络的参数。
         if self.config['model']['pretrain_full'] != "":
@@ -192,6 +198,9 @@ class YOLO_V3():
             self.backbone.load_weights(self.config['model']['pretrain_backbone'],by_name=True)
         else:
             print('！！未加载预训练参数')
+    def yolo_loss(self,y_true,y_pred):
+        return mean_squared_error(y_true,y_pred)
+        # return np.array([[1]])
     def load_weights(self,path):
         self.model.load_weights(path)
     def evaluate(self,generator):

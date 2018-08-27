@@ -1,0 +1,29 @@
+ {
+      "model":{
+          "type":"detection",
+          "output_units":17,
+          "pretrain_backbone":"weights/darknet53.h5",
+          "pretrain_full":"",
+          "batch_size":16,
+          "image_size":[416,416],
+          "grid":13,
+          "anchors": [10,13,  16,30,  33,23,  30,61,  62,45,  59,119,  116,90,  156,198,  373,326],
+
+          "classes":[
+            "WaterDrop",
+            "Upwarping",
+            "HorizontalCrack",
+            "Scale",
+            "RollMark",
+            "WaterStain",
+            "VerticalCrack"
+        ]
+      },
+      "train":{
+          "epochs":10,
+          "data_folder":"/Users/shidanlifuhetian/All/data/KHB_ANNO/USTBdata/train"
+      },
+      "val":{
+          "data_folder":"/Users/shidanlifuhetian/All/data/KHB_ANNO/USTBdata/test"
+      }
+  }
