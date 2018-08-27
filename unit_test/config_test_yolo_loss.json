@@ -1,7 +1,7 @@
  {
       "model":{
           "type":"detection",
-          "pretrain_backbone":"weights/darknet53.h5",
+          "pretrain_backbone":"",
           "pretrain_full":"",
           "batch_size":4,
           "image_size":[416,416],

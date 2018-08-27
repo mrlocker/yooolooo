@@ -77,8 +77,28 @@ class SquarePad(iaa.Augmenter):
         return background
 
 class St_Generator(Sequence):
-    def __init__(self,image_anno_list,config,shuffle=False):
-        self.image_anno_list = image_anno_list
+    # phase could be "train" or "test" or "val", both test and val refer to val in config
+    def __init__(self,config,shuffle=False,phase="train"):
+
+        image_extention = 'bmp'
+        img_list = get_dir_filelist_by_extension(dir=config['train']['data_folder'] + '/images', ext=image_extention)
+        img_list.sort()
+        all_image_and_anno_paths = []
+        for img_path in img_list:
+            xmlname = img_path.split('/')[-1].replace(image_extention, 'xml')
+            if phase == "train":
+                anno_path = config['train']['data_folder'] + '/annotations/' + xmlname
+            elif phase == "test"or"val":
+                anno_path = config['val']['data_folder'] + '/annotations/' + xmlname
+
+            all_image_and_anno_paths.append({
+                'image_path': img_path,
+                'anno_path': anno_path
+            })
+
+
+
+        self.image_anno_list = all_image_and_anno_paths
         self.batch_size = config['model']['batch_size']
         self.image_size = config['model']['image_size']
         self.grid       = config['model']['grid']
@@ -86,7 +106,7 @@ class St_Generator(Sequence):
         self.anchors    = config['model']['anchors']
         if shuffle:
             random.seed(time.time())
-            random.shuffle(image_anno_list)
+            random.shuffle(self.image_anno_list)
         # image augmentation
         sometimes = lambda aug: iaa.Sometimes(0.5, aug)
         self.aug_pipe = iaa.Sequential([SquarePad(),
@@ -291,18 +311,18 @@ def draw_aug_bboxes(aug_img, bboxes,labels):
 
 if __name__ == "__main__":
     config = load_json('./config_detection.json')
-    image_extention='bmp'
-    img_list = get_dir_filelist_by_extension(dir=config['train']['data_folder']+'/images',ext=image_extention)
-    img_list.sort()
-    all_image_and_anno_paths = []
-    for img_path in img_list:
-        xmlname = img_path.split('/')[-1].replace(image_extention,'xml')
-        anno_path = config['train']['data_folder']+'/annotations/'+xmlname
-        all_image_and_anno_paths.append({
-            'image_path':img_path,
-            'anno_path':anno_path
-        })
-    gen = St_Generator(all_image_and_anno_paths,config)
+    # image_extention='bmp'
+    # img_list = get_dir_filelist_by_extension(dir=config['train']['data_folder']+'/images',ext=image_extention)
+    # img_list.sort()
+    # all_image_and_anno_paths = []
+    # for img_path in img_list:
+    #     xmlname = img_path.split('/')[-1].replace(image_extention,'xml')
+    #     anno_path = config['train']['data_folder']+'/annotations/'+xmlname
+    #     all_image_and_anno_paths.append({
+    #         'image_path':img_path,
+    #         'anno_path':anno_path
+    #     })
+    gen = St_Generator(config)
     print('len:',len(gen))
     one_batch = gen.__getitem__(0)
     for i in range(5):
