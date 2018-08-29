@@ -12,6 +12,9 @@ def softmax(list):
     result = e1/np.sum(d2)
     return result
 
+def sigmoid(list):
+    return 1/(1 +(1/np.exp(list)))
+
 def load_json(path):
     import json
     with open(path,encoding='UTF-8') as config_buffer:

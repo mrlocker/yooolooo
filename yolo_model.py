@@ -51,13 +51,9 @@ class Basic_Route():# same to [route] in yolov3.cfg
         if shitB != None:
             shit = Concatenate()([shitA, shitB])
             return shit
-
 class Basic_Detection():
-    # TODO:待添加真正的检测代码
     def __call__(self, shit):
-        # shit = np.reshape(shit,newshape=(shit.shape[0], shit.shape[1], shit.shape[2], 3, int(shit.shape[3] / 3)))
         shit = Reshape((shit.shape.dims[1].value, shit.shape.dims[2].value, 3, int(shit.shape.dims[3].value / 3)))(shit)
-
         return shit
 
 class YOLO_V3():
