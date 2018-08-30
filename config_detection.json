@@ -7,7 +7,6 @@
           "image_size":[416,416],
           "grid":13,
           "anchors": [10,13,  16,30,  33,23,  30,61,  62,45,  59,119,  116,90,  156,198,  373,326],
-
           "classes":[
             "WaterDrop",
             "Upwarping",
@@ -16,7 +15,10 @@
             "RollMark",
             "WaterStain",
             "VerticalCrack"
-        ]
+        ],
+        "threshold":0.2,
+        "nms_iou_threshold":0.5,
+        "max_objects_per_image":128
       },
       "train":{
           "epochs":10,

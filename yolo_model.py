@@ -12,8 +12,9 @@ from keras.callbacks import ModelCheckpoint, LearningRateScheduler,TensorBoard,R
 
 import tensorflow as tf
 import numpy as np
-from utils import preprocess,softmax
+from utils import *
 from keras import backend as K
+import time
 
 class Basic_Conv():
     def __init__(self,filters,kernel_size,strides=(1,1),batch_normalize=True,
@@ -55,7 +56,14 @@ class Basic_Detection():
     def __call__(self, shit):
         shit = Reshape((shit.shape.dims[1].value, shit.shape.dims[2].value, 3, int(shit.shape.dims[3].value / 3)))(shit)
         return shit
-
+class Bbox():
+    def __init__(self):
+        self.x1 = 0
+        self.y1 = 0
+        self.x2 = 0
+        self.y2 = 0
+        self.label = "Undefined"
+        self.confidence = 0.0
 class YOLO_V3():
     def __init__(self,config):
         self.config = config
@@ -297,6 +305,165 @@ class YOLO_V3():
             print('真值：',true_class,'预测值：无'," 💀")
         cv2.waitKey(0)
 
+    def calc_classes_score(self,raw_output):
+        confidence = raw_output[..., 4:5]
+        classes = raw_output[..., 5:]
+        classes_scores = classes * confidence
+        # print(raw_output.shape,confidence.shape,classes.shape,classes_scores.shape)
+        # print('classes:',classes[0,0,0,0])
+        # print('confidence:',confidence[0,0,0,0])
+        # print('cls_scores:',classes_scores[0,0,0,0])
+        r = np.greater(classes_scores, self.config['model']['threshold'])
+        # print('r:',r[0,0,0,0])
+        r2 = np.where(r, classes_scores, 0)
+        # print('r2:',r2[0,0,0,0])
+        return r2
+
+    def regulize_single_raw_output(self,raw_output):
+        anchors = self.config['model']['anchors']
+        anchor_52 = anchors[0 * 2:3 * 2]
+        anchor_26 = anchors[3 * 2:6 * 2]
+        anchor_13 = anchors[6 * 2:9 * 2]
+
+        grid = raw_output.shape[1]
+        grid_coord = int(416 / grid)
+        bboxes_xy = raw_output[..., 0:2]
+        bboxes_wh = raw_output[..., 2:4]
+        bboxes_xy = sigmoid(bboxes_xy)
+
+        c_mask = np.zeros(shape=bboxes_xy.shape)
+        for batch_i in range(c_mask.shape[0]):
+            for cy in range(c_mask.shape[1]):
+                for cx in range(c_mask.shape[2]):
+                    for j in range(c_mask.shape[3]):
+                        c_mask[batch_i][cy][cx][j] = np.array([cx * grid_coord, cy * grid_coord])
+
+        bboxes_xy = bboxes_xy + c_mask
+        bboxes_wh = np.exp(bboxes_wh)
+        # print('bboxes_wh:',bboxes_wh[1,3,7,0])
+        anchors_big = np.zeros(shape=bboxes_wh.shape, dtype=np.float32)
+        for i in range(3):
+            if grid == 13:
+                anchors_big[:, :, :, i, :] = np.array(anchor_13[i * 2:(i + 1) * 2])
+            elif grid == 26:
+                anchors_big[:, :, :, i, :] = np.array(anchor_26[i * 2:(i + 1) * 2])
+            elif grid == 52:
+                anchors_big[:, :, :, i, :] = np.array(anchor_52[i * 2:(i + 1) * 2])
+            else:
+                raise Exception('wrong grid size!', grid)
+
+        bboxes_wh = bboxes_wh * anchors_big
+        # print('bboxes_wh:',bboxes_wh[1,3,7,1])
+
+        classes_score = self.calc_classes_score(raw_output)
+        bboxes = np.concatenate((bboxes_xy, bboxes_wh, classes_score), axis=-1)
+
+        return bboxes
+        # sort
+    def inference(self,output):
+        thresh = self.config['model']['threshold']
+        r1 = self.regulize_single_raw_output(output[0])
+        r2 = self.regulize_single_raw_output(output[1])
+        r3 = self.regulize_single_raw_output(output[2])
+        r  = [r1,r2,r3]
+        batch_winners = []
+        for batch_i in range(r[0].shape[0]):
+            # 1.放一起
+            all_bboxes = []
+            for i in range(3):
+                ro = r[i][batch_i]
+                for cy in range(ro.shape[0]):
+                    for cx in range(ro.shape[1]):
+                        for j in range(ro.shape[2]):
+                            bbox = ro[cy, cx, j]
+                            all_bboxes.append(bbox)
+
+            # 2.按score排序。（以每个bbox里面最大的score记）
+            sorted_bboxes = sorted(all_bboxes, key=lambda item: np.max(item[4:]), reverse=True)
+            # 2.5 compress 移除class_score小于thresh的bbox
+            compressed_sorted_bboxes = []
+            for i, box in enumerate(sorted_bboxes):
+                if np.max(box[4:]) <= thresh:
+                    compressed_sorted_bboxes = sorted_bboxes[0:i]
+                    break
+            sorted_bboxes = compressed_sorted_bboxes
+            print('压缩后的bboxes:', len(compressed_sorted_bboxes))
+            # 3. 开始nms
+            # final_bboxes = self.do_nms(sorted_bboxes,self.config['model']['nms_iou_threshold'])
+            final_bboxes = self.do_tf_nms(sorted_bboxes,self.config['model']['nms_iou_threshold'])
+            print('final bboxes count:', len(final_bboxes))
+            img = np.zeros(shape=[416, 416, 3], dtype=np.uint8)
+            after_img = draw_bboxes2(img, final_bboxes)
+            cv2.imshow('after img', after_img)
+            cv2.waitKey(0)
+
+    def do_nms(self,sorted_bboxes,thresh):
+        nms_thresh = 0.5
+
+        t0 = time.time()
+        for i in range(len(sorted_bboxes)):
+            rect = convert_rect_from_center_to_four_coord(sorted_bboxes[i][0:4])
+            sorted_bboxes[i][0:4] = rect
+        t1 = time.time()
+        elapsed = t1 - t0
+
+        print('预备耗时:%.3f毫秒' % (elapsed * 1000))
+
+        for i in range(len(sorted_bboxes)):
+            t0 = time.time()
+            current_king_box = sorted_bboxes[i]
+            rect1 = current_king_box[0:4]
+            for j in range(i + 1, len(sorted_bboxes)):
+                # we have to kill all the challengers that is too near to me, all of them!!!
+                challenge_box = sorted_bboxes[j]
+                if np.max(challenge_box) > 0:
+                    rect2 = challenge_box[0:4]
+                    iou_result = iou2(rect1, rect2)
+                    if iou_result > nms_thresh:
+                        # too near to me, kill on sight!!!
+                        sorted_bboxes[j] = np.zeros(shape=sorted_bboxes[0].shape, dtype=np.float32)
+                    # else:
+                    # too far away from me ,I don't care if it lives.
+                    # pass
+            t1 = time.time()
+            elapsed = t1 - t0
+            if i % 10 == 0:
+                print('i:%d 耗时:%.3f毫秒' % (i, elapsed * 1000))
+
+        tmp = sorted(sorted_bboxes, key=lambda item: np.max(item[4:]), reverse=True)
+        final_bboxes = tmp
+        for i, box in enumerate(tmp):
+            if np.max(box[4:]) <= thresh:
+                final_bboxes = tmp[0:i]
+                break
+        return final_bboxes
+    def do_tf_nms(self,sorted_bboxes,thresh):
+        b = np.array(sorted_bboxes)
+        coord = b[...,0:4]
+        x1 = coord[...,0:1]
+        y1 = coord[...,1:2]
+        x2 = coord[...,2:3]
+        y2 = coord[...,3:4]
+        new_coord = np.concatenate([y1,x1,y2,x2],axis=-1)
+        scores = np.max(b[...,4:],axis=-1)
+        selected_indices = tf.image.non_max_suppression(new_coord,scores,max_output_size=self.config['model']['max_objects_per_image'],
+                                     iou_threshold=thresh)
+        bboxes_on_image = []
+        # 初始化所有variables 的op
+        init_op = tf.global_variables_initializer()
+        with tf.Session() as sess:
+            sess.run(init_op)
+            indices = sess.run(selected_indices)
+            for i in range(indices.shape[0]):
+                bbox = Bbox()
+                bbox.x1 = int(b[indices[i]][0])
+                bbox.y1 = int(b[indices[i]][1])
+                bbox.x2 = int(b[indices[i]][2])
+                bbox.y2 = int(b[indices[i]][3])
+                bbox.label = self.config['model']['classes'][np.argmax(b[indices[i]][4:])]
+                bbox.confidence = float(np.max(b[indices[i]][4:]))
+                bboxes_on_image.append(bbox)
+        return bboxes_on_image
 def prepare_data(train_folder,val_folder):
     from keras.preprocessing.image import ImageDataGenerator
     train_datagen = ImageDataGenerator(rotation_range=30,

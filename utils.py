@@ -74,5 +74,55 @@ def iou(rect1,rect2):
         return 0
     else:
         return area/(bbox1.area + bbox2.area -area)
+def area(rect):
+    return (rect[2]-rect[0])*(rect[3]-rect[1])
+def iou2(rect1,rect2):
+    inter_area = rect_interaction(rect1,rect2)
+
+    if inter_area == -1:
+        return 0
+    else:
+        return inter_area/(area(rect1) + area(rect2) -inter_area)
+
+def convert_rect_from_center_to_four_coord(rect):
+    x_center = rect[0]
+    y_center = rect[1]
+    width    = rect[2]
+    height   = rect[3]
+
+    x1 = x_center-width/2
+    x2 = x_center+width/2
+    y1 = y_center-height/2
+    y2 = y_center+height/2
+
+    return [x1,y1,x2,y2]
+
+def draw_aug_bboxes(aug_img, bboxes,labels):
+    pred_color = (255,255,255)
+    for i,rect in enumerate(bboxes.bounding_boxes):
+        cv2.rectangle(aug_img, pt1=(rect.x1, rect.y1), pt2=(rect.x2, rect.y2), color=pred_color, thickness=2)
+        cv2.putText(aug_img, labels[i] + ' ', (rect.x1 + 2, rect.y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, pred_color)
+        cv2.circle(aug_img,center=(int(rect.center_x),int(rect.center_y)),radius=1,color=(0,0,255),thickness=-1)
+
+    return aug_img
+
+def draw_bboxes(img, bboxes):
+    # bboxes are a np array first 4 elems are x1,y1,x2,y2
+    pred_color = (255,255,255)
+    for i,rect in enumerate(bboxes):
+        cv2.rectangle(img, pt1=(int(rect[0]), int(rect[1])), pt2=(int(rect[2]), int(rect[3])), color=pred_color, thickness=1)
+        # cv2.putText(img, labels[i] + ' ', (rect.x1 + 2, rect.y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, pred_color)
+        # cv2.circle(img, center=(int(rect.center_x), int(rect.center_y)), radius=1, color=(0, 0, 255), thickness=-1)
+    return img
+def draw_bboxes2(img, bboxes):
+    # bboxes are a np array first 4 elems are x1,y1,x2,y2
+    pred_color = (255,255,255)
+    for i,bbox in enumerate(bboxes):
+        cv2.rectangle(img, pt1=(int(bbox.x1), int(bbox.y1)), pt2=(int(bbox.x2), int(bbox.y2)), color=pred_color, thickness=1)
+        cv2.putText(img, "%s %.2f"%(bbox.label,bbox.confidence), (bbox.x1 + 2, bbox.y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, pred_color)
+        # cv2.circle(img, center=(int(rect.center_x), int(rect.center_y)), radius=1, color=(0, 0, 255), thickness=-1)
+    return img
+
+
 if __name__ == "__main__":
     pass
