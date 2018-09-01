@@ -20,6 +20,7 @@ def load_json(path):
     with open(path,encoding='UTF-8') as config_buffer:
         config = json.loads(config_buffer.read())
         return config
+
 def get_dir_filelist_by_extension(dir, ext):
     r = os.listdir(dir)
     file_list = []
@@ -78,7 +79,6 @@ def area(rect):
     return (rect[2]-rect[0])*(rect[3]-rect[1])
 def iou2(rect1,rect2):
     inter_area = rect_interaction(rect1,rect2)
-
     if inter_area == -1:
         return 0
     else:
@@ -115,13 +115,41 @@ def draw_bboxes(img, bboxes):
         # cv2.circle(img, center=(int(rect.center_x), int(rect.center_y)), radius=1, color=(0, 0, 255), thickness=-1)
     return img
 def draw_bboxes2(img, bboxes):
-    # bboxes are a np array first 4 elems are x1,y1,x2,y2
     pred_color = (255,255,255)
     for i,bbox in enumerate(bboxes):
         cv2.rectangle(img, pt1=(int(bbox.x1), int(bbox.y1)), pt2=(int(bbox.x2), int(bbox.y2)), color=pred_color, thickness=1)
         cv2.putText(img, "%s %.2f"%(bbox.label,bbox.confidence), (bbox.x1 + 2, bbox.y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, pred_color)
-        # cv2.circle(img, center=(int(rect.center_x), int(rect.center_y)), radius=1, color=(0, 0, 255), thickness=-1)
     return img
+
+
+def ap(detections, gt_count):
+    # calc average precision based on pascal voc 2007 standard
+    # this ap is only for one class.
+    # detections (list) : a n*2 list. first col is confidence second col is True or False of this detections
+    # gt_count (int) : total gound truths of this kind
+
+    # sort by confidence ascending
+    d = sorted(detections, key=lambda item: item[0], reverse=True)
+    detections = np.array(d)
+    precisions_recalls = np.zeros(shape=detections[..., 0:2].shape)
+    # calc precisions and recalls by rank.ie: top x detections
+    for i in range(detections.shape[0]):
+        TP = np.sum(detections[0:i + 1, 1:2])  # calc all Trues above this rank
+        recall = TP / gt_count
+        precision = TP / (i + 1)
+        precisions_recalls[i] = [precision, recall]
+    # calc recall-precision curve
+    r_recall_max_precisions = np.zeros(shape=(11, 2))
+    for r in range(11):
+        r_recall = r / 10
+        for i in range(len(precisions_recalls)):
+            if precisions_recalls[i, 1] > r_recall:
+                max_precision = np.max(precisions_recalls[i:, 0])
+                r_recall_max_precisions[r] = [r_recall, max_precision]
+                break
+            r_recall_max_precisions[r] = [r_recall, 0]
+    ap = np.sum(r_recall_max_precisions[..., 1]) / 11
+    return ap
 
 
 if __name__ == "__main__":
