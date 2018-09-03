@@ -4,7 +4,8 @@ from data_generator import St_Generator
 if __name__ == "__main__":
     # this is for detection training
     config = load_json('./config_detection.json')
-    gen = St_Generator(config)
+    gen = St_Generator(config,phase="train")
+    val_gen = St_Generator(config,phase="test")
 
     yolo = YOLO_V3(config=config)
-    yolo.train_detection(gen,gen)
+    yolo.train_detection(gen,val_gen)

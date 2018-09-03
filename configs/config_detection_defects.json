@@ -1,8 +1,10 @@
  {
       "model":{
+          "debug":false,
           "type":"detection",
           "pretrain_backbone":"weights/darknet53.h5",
           "pretrain_full":"",
+          "final_model_weights":"tmp/detection_tmp.h5",
           "batch_size":4,
           "image_size":[416,416],
           "grid":13,
