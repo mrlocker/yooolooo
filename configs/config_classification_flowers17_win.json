@@ -1,0 +1,26 @@
+ {
+      "model":{
+          "type":"classification",
+          "output_units":17,
+          "image_size":[256,256],
+          "pretrain_backbone":"weights/darknet53.h5",
+          "pretrain_full":"",
+          "classes":[
+            "flower_A", "flower_B", "flower_C",
+            "flower_D", "flower_E", "flower_F",
+            "flower_G", "flower_H", "flower_I",
+            "flower_J", "flower_K", "flower_L",
+            "flower_M", "flower_N", "flower_O",
+            "flower_P", "flower_Q"
+          ],
+          "batch_size":2,
+          "debug":false
+      },
+      "train":{
+          "epochs":200,
+          "data_folder":"D:/DataSets/flowers17_tsycnh/train"
+      },
+      "val":{
+          "data_folder":"D:/DataSets/flowers17_tsycnh/validation"
+      }
+  }

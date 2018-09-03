@@ -169,7 +169,9 @@ class YOLO_V3():
     def train(self,train_generator,val_generator):
         config = self.config
         loss_func = tf.losses.softmax_cross_entropy
-        checkpoint = ModelCheckpoint(filepath='./tmp/fl_ckpt.h5', monitor='val_acc',
+        filepath = "./tmp/classification_flowers_ckpt_{epoch:02d}_{val_acc:.2f}.h5"
+
+        checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_acc',
                                      verbose=1, save_best_only=False)
 
         def lr_sch(epoch):
@@ -190,7 +192,7 @@ class YOLO_V3():
         self.model.fit_generator(generator=train_generator,
                                  epochs=config['train']['epochs'],
                                  validation_data=val_generator,
-                                 validation_steps=280/8,class_weight='auto',
+                                 validation_steps=280/self.batch_size,class_weight='auto',
                                  callbacks=callbacks)
         self.model.save_weights('fl_model.h5')
     def train_detection(self,train_generator,val_generator):
@@ -484,7 +486,7 @@ class YOLO_V3():
         pass
     def do_AP(self):
         pass
-def prepare_data(train_folder,val_folder):
+def prepare_data(train_folder,val_folder,batch_size):
     from keras.preprocessing.image import ImageDataGenerator
     train_datagen = ImageDataGenerator(rotation_range=30,
                                        width_shift_range=0.2,
@@ -504,9 +506,9 @@ def prepare_data(train_folder,val_folder):
                                        preprocessing_function=lambda x:((x/255)-0.5)*2)
     # 默认的color_mode是RGB
     train_generator = train_datagen.flow_from_directory(directory=train_folder,
-                                                        target_size=(256,256),batch_size=8)
+                                                        target_size=(256,256),batch_size=batch_size)
     val_generator   = val_datagen.flow_from_directory(directory=val_folder,
-                                                      target_size=(256,256),batch_size=8)
+                                                      target_size=(256,256),batch_size=batch_size)
     return train_generator,val_generator
 if __name__ == "__main__":
     pass
