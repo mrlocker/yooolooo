@@ -206,8 +206,10 @@ class YOLO_V3():
         # 加载预训练参数。首先加载完全模型的参数，如果没有再加载主干网络的参数。
         if self.config['model']['pretrain_full'] != "":
             self.model.load_weights(self.config['model']['pretrain_full'])
+            print("全模型参数已加载：%s"%self.config['model']['pretrain_full'])
         elif self.config['model']['pretrain_backbone'] != "":
             self.backbone.load_weights(self.config['model']['pretrain_backbone'],by_name=True)
+            print("backbone模型参数已加载：%s"%self.config['model']['pretrain_backbone'])
         else:
             print('！！未加载预训练参数')
 
@@ -280,9 +282,7 @@ class YOLO_V3():
         self.model.load_weights(path)
     def evaluate(self,generator):
         self.load_weights(self.config['model']['final_model_weights'])
-        self.model.compile(optimizer=Adam(),loss=[self.yolo_loss,self.yolo_loss,self.yolo_loss])
-
-        o = self.model.evaluate_generator(generator)
+        pr_result = self.model.predict_generator(generator)
         pass
     def predict_classification(self, image_path, threshold=0.5):
         # predict 用来预测单张图像的分类结果。

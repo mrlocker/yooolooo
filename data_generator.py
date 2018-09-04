@@ -104,9 +104,9 @@ class St_Generator(Sequence):
         self.grid       = config['model']['grid']
         self.classes    = config['model']['classes']
         self.anchors    = config['model']['anchors']
-        if shuffle:
-            random.seed(time.time())
-            random.shuffle(self.image_anno_list)
+        self.shuffle = shuffle
+        if self.shuffle:
+            self.shuffle_data()
         # image augmentation
         sometimes = lambda aug: iaa.Sometimes(0.5, aug)
         self.aug_pipe = iaa.Sequential([SquarePad(),
@@ -143,7 +143,8 @@ class St_Generator(Sequence):
         return x_batch,y_batches #ybatches order in Large anchor,medium anchor,small anchor
 
     def on_epoch_end(self):# modify dataset at each end of the epoch
-        pass
+        if self.shuffle:
+            self.shuffle_data()
     # def aug_image(self,l_bound,r_bound):
     #     # 2.读取图像和label(每次一批）
     #     bbses = []
@@ -283,6 +284,9 @@ class St_Generator(Sequence):
         return y_batches
     def choose_anchor(self):
         pass
+    def shuffle_data(self):
+        random.seed(time.time())
+        random.shuffle(self.image_anno_list)
 def check_grid(img,bbs,labels,cx,cy,grid):
     img = img.copy()
     w,h,_ = img.shape
