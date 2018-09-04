@@ -85,7 +85,6 @@ class YOLO_V3():
         # official_backbone.summary(positions=[.33, .6, .7, 1])
         # a=0
         # exit()
-
     def construct_backbone(self,inputs):
         # 该主干网络和yolo v3论文上花的那个图一模一样。不包括最后三层，那三层放到了前端里面
         self.shits.append(Basic_Conv(filters=32, kernel_size=3)(inputs))
@@ -123,6 +122,21 @@ class YOLO_V3():
             self.shits.append(Basic_Res()(self.shits[-1], self.shits[-3]))
         #
         self.backbone = Model(inputs,self.shits[-1])
+    def load_weights(self,path):
+        self.model.load_weights(path)
+    def load_pretrain_weights(self):
+        # 加载预训练参数。首先加载完全模型的参数，如果没有再加载主干网络的参数。
+        if self.config['model']['pretrain_full'] != "":
+            self.model.load_weights(self.config['model']['pretrain_full'])
+            print("全模型参数已加载：%s"%self.config['model']['pretrain_full'])
+        elif self.config['model']['pretrain_backbone'] != "":
+            self.backbone.load_weights(self.config['model']['pretrain_backbone'],by_name=True)
+            print("backbone模型参数已加载：%s"%self.config['model']['pretrain_backbone'])
+        else:
+            print('！！未加载预训练参数')
+        return None
+
+####-------------------- classification start ---------------####
     def construct_classification_model(self):
         self.shits.append(GlobalAveragePooling2D()(self.shits[-1]))
         output_units = self.config['model']['output_units']
@@ -132,6 +146,71 @@ class YOLO_V3():
 
         plot_model(self.model)
         print("分类网络组建完毕")
+    def train(self,train_generator,val_generator):
+        config = self.config
+        loss_func = tf.losses.softmax_cross_entropy
+        filepath = "./tmp/classification_flowers_ckpt_{epoch:02d}_{val_acc:.2f}.h5"
+
+        checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_acc',
+                                     verbose=1, save_best_only=False)
+
+        def lr_sch(epoch):
+            # 200 total
+            if epoch < 50:
+                return 1e-3
+            if 50 <= epoch < 100:
+                return 1e-4
+            if epoch >= 100:
+                return 1e-5
+
+        lr_scheduler = LearningRateScheduler(lr_sch)
+        lr_reducer = ReduceLROnPlateau(monitor='val_acc', factor=0.2, patience=5,
+                                       mode='max', min_lr=1e-3)
+        tb = TensorBoard(log_dir='./logs',write_graph=False)
+        callbacks = [checkpoint, lr_scheduler, lr_reducer,tb]
+        self.model.compile(optimizer=Adam(),loss=loss_func,metrics=['accuracy'])
+        self.model.fit_generator(generator=train_generator,
+                                 epochs=config['train']['epochs'],
+                                 validation_data=val_generator,
+                                 validation_steps=280/self.batch_size,class_weight='auto',
+                                 callbacks=callbacks)
+        self.model.save_weights('fl_model.h5')
+    def predict_classification(self, image_path, threshold=0.5):
+        # predict 用来预测单张图像的分类结果。
+        import random,os,cv2
+        true_class = random.randint(0,16)
+        class_name = "flower_"+chr(65+true_class)
+        target_folder = os.path.join(image_path,class_name)
+        files = os.listdir(target_folder)
+        fileindex = random.randint(0,len(files)-1)
+        target_path = os.path.join(target_folder,files[fileindex])
+        image = load_img(target_path,target_size=(256,256))
+
+        np_image = np.array(image)
+        image_for_cv2_show = np_image[:, :, ::-1].copy()
+
+        image = np.expand_dims(np_image,axis=0)
+        img = preprocess(image)
+        result = self.model.predict(img)
+        r = softmax(result)
+        cv2.imshow('result', image_for_cv2_show)
+        pred_index = np.argmax(r)
+        pred = self.config['classes'][pred_index]
+        # true_index = class_indices[true_class]# get one classes's index
+        # index_classe = dict(zip(class_indices.values(), class_indices.keys()))
+
+        if np.max(r) > 0.5:
+            if pred == class_name:
+                message = " 🍺"
+            else:
+                message = " 💀"
+            print('真值种类名称：%s 预测类别名称：%s %s'%(class_name,pred,message))
+        else:
+            print('真值：',class_name,'预测值：无'," 💀")
+        cv2.waitKey(0)
+####-------------------- classification end   ---------------####
+
+####-------------------- detection start      ---------------####
     def construct_detection_model(self):
 
         for i in range(3):
@@ -165,54 +244,6 @@ class YOLO_V3():
         self.model.summary()
         plot_model(self.model)
         print("目标检测网络构建完毕")
-
-    def train(self,train_generator,val_generator):
-        config = self.config
-        loss_func = tf.losses.softmax_cross_entropy
-        filepath = "./tmp/classification_flowers_ckpt_{epoch:02d}_{val_acc:.2f}.h5"
-
-        checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_acc',
-                                     verbose=1, save_best_only=False)
-
-        def lr_sch(epoch):
-            # 200 total
-            if epoch < 50:
-                return 1e-3
-            if 50 <= epoch < 100:
-                return 1e-4
-            if epoch >= 100:
-                return 1e-5
-
-        lr_scheduler = LearningRateScheduler(lr_sch)
-        lr_reducer = ReduceLROnPlateau(monitor='val_acc', factor=0.2, patience=5,
-                                       mode='max', min_lr=1e-3)
-        tb = TensorBoard(log_dir='./logs',write_graph=False)
-        callbacks = [checkpoint, lr_scheduler, lr_reducer,tb]
-        self.model.compile(optimizer=Adam(),loss=loss_func,metrics=['accuracy'])
-        self.model.fit_generator(generator=train_generator,
-                                 epochs=config['train']['epochs'],
-                                 validation_data=val_generator,
-                                 validation_steps=280/self.batch_size,class_weight='auto',
-                                 callbacks=callbacks)
-        self.model.save_weights('fl_model.h5')
-    def train_detection(self,train_generator,val_generator):
-        filepath = "./tmp/detection_ckpt_{epoch:02d}_{val_acc:.2f}.h5"
-
-        checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_acc',
-                                     verbose=1, save_best_only=False)
-        self.model.compile(optimizer=Adam(),loss=[self.yolo_loss,self.yolo_loss,self.yolo_loss])
-        self.model.fit_generator(generator=train_generator,epochs=self.config['train']['epochs'],callbacks=[checkpoint])
-    def load_pretrain_weights(self):
-        # 加载预训练参数。首先加载完全模型的参数，如果没有再加载主干网络的参数。
-        if self.config['model']['pretrain_full'] != "":
-            self.model.load_weights(self.config['model']['pretrain_full'])
-            print("全模型参数已加载：%s"%self.config['model']['pretrain_full'])
-        elif self.config['model']['pretrain_backbone'] != "":
-            self.backbone.load_weights(self.config['model']['pretrain_backbone'],by_name=True)
-            print("backbone模型参数已加载：%s"%self.config['model']['pretrain_backbone'])
-        else:
-            print('！！未加载预训练参数')
-
     def yolo_loss(self,y_true, y_pred):
         # batch_index,cy,cx,sub_anchor_index,inner_index
         # 1. batch中的数据逐个循环
@@ -222,8 +253,8 @@ class YOLO_V3():
 
         # 1. prepare y_pred
         y_pred_xy = tf.sigmoid(y_pred[..., 0:2])  # scale x to 0~1
-        y_pred_wh = tf.sigmoid(y_pred[..., 2:4])  # scale confidence to 0~1 #（4，13，13，3，1）
-        y_pred_confidence = tf.sigmoid(y_pred[..., 4:5])
+        y_pred_wh = tf.sigmoid(y_pred[..., 2:4])
+        y_pred_confidence = tf.sigmoid(y_pred[..., 4:5]) # scale confidence to 0~1 #（4，13，13，3，1）
         y_pred_classes = y_pred[..., 5:]
 
         y_true_xy = y_true[..., 0:2]
@@ -277,46 +308,25 @@ class YOLO_V3():
         #     tf.Print()
 
         return total_loss
+    def train_detection(self,train_generator,val_generator):
+        filepath = "./tmp/detection_ckpt_{epoch:02d}_{val_acc:.2f}.h5"
 
-    def load_weights(self,path):
-        self.model.load_weights(path)
+        checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_acc',
+                                     verbose=1, save_best_only=False)
+        self.model.compile(optimizer=Adam(),loss=[self.yolo_loss,self.yolo_loss,self.yolo_loss])
+        self.model.fit_generator(generator=train_generator,epochs=self.config['train']['epochs'],callbacks=[checkpoint])
     def evaluate(self,generator):
+        print('开始评估模型性能')
         self.load_weights(self.config['model']['final_model_weights'])
+        print('载入完整已训练模型')
         pr_result = self.model.predict_generator(generator)
-        pass
-    def predict_classification(self, image_path, threshold=0.5):
-        # predict 用来预测单张图像的分类结果。
-        import random,os,cv2
-        true_class = random.randint(0,16)
-        class_name = "flower_"+chr(65+true_class)
-        target_folder = os.path.join(image_path,class_name)
-        files = os.listdir(target_folder)
-        fileindex = random.randint(0,len(files)-1)
-        target_path = os.path.join(target_folder,files[fileindex])
-        image = load_img(target_path,target_size=(256,256))
-
-        np_image = np.array(image)
-        image_for_cv2_show = np_image[:, :, ::-1].copy()
-
-        image = np.expand_dims(np_image,axis=0)
-        img = preprocess(image)
-        result = self.model.predict(img)
-        r = softmax(result)
-        cv2.imshow('result', image_for_cv2_show)
-        pred_index = np.argmax(r)
-        pred = self.config['classes'][pred_index]
-        # true_index = class_indices[true_class]# get one classes's index
-        # index_classe = dict(zip(class_indices.values(), class_indices.keys()))
-
-        if np.max(r) > 0.5:
-            if pred == class_name:
-                message = " 🍺"
-            else:
-                message = " 💀"
-            print('真值种类名称：%s 预测类别名称：%s %s'%(class_name,pred,message))
-        else:
-            print('真值：',class_name,'预测值：无'," 💀")
-        cv2.waitKey(0)
+        # list = [[ndarray][ndarray][ndarray]] 464*13*13*3*(5+7) 464*26*26*3*(5+7) 464*52*52*3*(5+7)
+        for i in range(pr_result[0].shape[0]):
+            out0 = pr_result[0][i]
+            out1 = pr_result[1][i]
+            out2 = pr_result[2][i]
+            out = [out0,out1,out2]
+            self.inference(out)
 
     def calc_classes_score(self,raw_output):
         confidence = raw_output[..., 4:5]
@@ -331,8 +341,10 @@ class YOLO_V3():
         r2 = np.where(r, classes_scores, 0)
         # print('r2:',r2[0,0,0,0])
         return r2
-
     def regulize_single_raw_output(self,raw_output):
+        if len(raw_output.shape)<5:
+            raw_output = np.expand_dims(raw_output,axis=0)
+
         anchors = self.config['model']['anchors']
         anchor_52 = anchors[0 * 2:3 * 2]
         anchor_26 = anchors[3 * 2:6 * 2]
@@ -343,6 +355,7 @@ class YOLO_V3():
         bboxes_xy = raw_output[..., 0:2]
         bboxes_wh = raw_output[..., 2:4]
         bboxes_xy = sigmoid(bboxes_xy)
+        bboxes_wh = sigmoid(bboxes_wh) # 这里和训练时一样，都加了sigmoid
 
         c_mask = np.zeros(shape=bboxes_xy.shape)
         for batch_i in range(c_mask.shape[0]):
@@ -412,7 +425,6 @@ class YOLO_V3():
                 cv2.waitKey(0)
             batch_winners.append(final_bboxes)
         return batch_winners
-
     def do_nms(self,sorted_bboxes,thresh):
         nms_thresh = 0.5
 
@@ -480,12 +492,13 @@ class YOLO_V3():
                 bbox.confidence = float(np.max(b[indices[i]][4:]))
                 bboxes_on_image.append(bbox)
         return bboxes_on_image
-
     def do_mAP(self,bboxes):
         #计算mAP，输入的bboxes应为经过nms抑制过的最终bboxes输出，即self.inference的输出
         pass
     def do_AP(self):
         pass
+####-------------------- detection end        ---------------####
+
 def prepare_data(train_folder,val_folder,batch_size):
     from keras.preprocessing.image import ImageDataGenerator
     train_datagen = ImageDataGenerator(rotation_range=30,

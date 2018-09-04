@@ -3,7 +3,7 @@ from utils import load_json
 from data_generator import St_Generator
 if __name__ == "__main__":
     # this is for detection training
-    config = load_json('configs/config_detection_defects_winK40.json')
+    config = load_json('configs/config_detection_defects_win.json')
     gen = St_Generator(config,phase="train")
     val_gen = St_Generator(config,phase="test")
 
@@ -13,6 +13,5 @@ if __name__ == "__main__":
         layer.trainable = False
     contiune_training = False
     if contiune_training:
-        yolo.model.load_weights('tmp/classification_flowers_ckpt_tl.h5')
-
+        yolo.model.load_weights('')
     yolo.train_detection(gen,val_gen)

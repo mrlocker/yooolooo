@@ -81,7 +81,12 @@ class St_Generator(Sequence):
     def __init__(self,config,shuffle=False,phase="train"):
 
         image_extention = 'bmp'
-        img_list = get_dir_filelist_by_extension(dir=config['train']['data_folder'] + '/images', ext=image_extention)
+        if phase == "train":
+            img_list = get_dir_filelist_by_extension(dir=config['train']['data_folder'] + '/images', ext=image_extention)
+        elif phase == "test"or"val":
+            img_list = get_dir_filelist_by_extension(dir=config['val']['data_folder'] + '/images', ext=image_extention)
+        else:
+            raise Exception("wrong phase! should be train test or val")
         img_list.sort()
         all_image_and_anno_paths = []
         for img_path in img_list:
