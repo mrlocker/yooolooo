@@ -244,6 +244,7 @@ class St_Generator(Sequence):
     def create_y_true(self,aug_bbses,aug_labels,anchors):
         # 3 y_batch,for 3 scale.First for large anchors, second for medium anchor, last for small anchors
         # grids are 13*13 26*26 52*52
+        anchor_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]# 13*13,26*26,52*52
         y_batches = [np.zeros(shape=(self.batch_size,self.grid*(2**l),self.grid*(2**l),3,4+1+len(self.classes))) for l in range(3)]#8*13*13*3*(4+1+classes) batch size*grid width*grid height*anchors*(4+1+classes)
 
         for i in range(len(aug_bbses)):#循环每一张图像对应的bboxes,每次一个batch中的一张，i即index of batch
@@ -264,11 +265,9 @@ class St_Generator(Sequence):
                     if current_iou>max_iou:
                         anchor_index = k/2
                         max_iou = current_iou
-                y_batch_index = int(anchor_index//3)
-                if y_batch_index == 0:
-                    y_batch_index = 2
-                elif y_batch_index == 2:
-                    y_batch_index = 0
+                for l in range(len(anchor_mask)):
+                    if anchor_index in anchor_mask[l]:
+                        y_batch_index = l
                 inner_index = int(anchor_index%3)
 
                 # different scales have different cell sizes
@@ -277,14 +276,15 @@ class St_Generator(Sequence):
                 # calc cell index start from 0
                 cx = int(np.floor(bbox.center_x/cell_size))
                 cy = int(np.floor(bbox.center_y/cell_size))
-                x_new = (bbox.center_x-cx*cell_size)/cell_size  # scale to 0~1 (relative to cell size)
-                y_new = (bbox.center_y-cy*cell_size)/cell_size
-                w_new = bbox.width/cell_size                    # scale to 0~13 (grid size)
+                # scale to grid unit
+                x_new = bbox.center_x/cell_size
+                y_new = bbox.center_y/cell_size
+                w_new = bbox.width/cell_size
                 h_new = bbox.height/cell_size
+
                 rice[0:4]=[x_new,y_new,w_new,h_new]
 
-
-                y_batches[y_batch_index][i][cy][cx][inner_index] = rice  # TODO:cx cy or cy cx? seems cy cx is right
+                y_batches[y_batch_index][i][cy][cx][inner_index] = rice  # cx cy or cy cx? seems cy cx is right,cols comes first
                 # check_grid(self.aug_imgs[i],self.aug_bbses[i],self.aug_labels[i],cx, cy,self.grid*(2**y_batch_index))
         return y_batches
     def choose_anchor(self):
@@ -319,7 +319,7 @@ def draw_aug_bboxes(aug_img, bboxes,labels):
     return aug_img
 
 if __name__ == "__main__":
-    config = load_json('./config_detection.json')
+    config = load_json('miniset/config_detection_miniset.json')
     # image_extention='bmp'
     # img_list = get_dir_filelist_by_extension(dir=config['train']['data_folder']+'/images',ext=image_extention)
     # img_list.sort()
@@ -334,7 +334,7 @@ if __name__ == "__main__":
     gen = St_Generator(config)
     print('len:',len(gen))
     one_batch = gen.__getitem__(0)
-    for i in range(5):
+    for i in range(config['model']['batch_size']):
         img = gen.aug_imgs[i]
         img_annos = gen.aug_bbses[i]
         img_labels = gen.aug_labels[i]

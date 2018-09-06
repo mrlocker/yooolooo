@@ -79,6 +79,7 @@ class YOLO_V3():
             self.construct_classification_model()
         elif self.config['model']['type'] == "detection":
             self.construct_detection_model()
+            self.anchors = self.config['model']['anchors']
         #self.load_pretrain_weights()
 
         # official_backbone = load_model('weights/darknet53.h5',compile=False)
@@ -165,7 +166,7 @@ class YOLO_V3():
 
         lr_scheduler = LearningRateScheduler(lr_sch)
         lr_reducer = ReduceLROnPlateau(monitor='val_acc', factor=0.2, patience=5,
-                                       mode='max', min_lr=1e-3)
+                                       mode='max', min_lr=1e-6)
         tb = TensorBoard(log_dir='./logs',write_graph=False)
         callbacks = [checkpoint, lr_scheduler, lr_reducer,tb]
         self.model.compile(optimizer=Adam(),loss=loss_func,metrics=['accuracy'])
@@ -244,6 +245,7 @@ class YOLO_V3():
         self.model.summary()
         plot_model(self.model)
         print("目标检测网络构建完毕")
+
     def yolo_loss(self,y_true, y_pred):
         # batch_index,cy,cx,sub_anchor_index,inner_index
         # 1. batch中的数据逐个循环
@@ -252,9 +254,66 @@ class YOLO_V3():
         lambda_noobj = 0.5
 
         # 1. prepare y_pred
+        # 1.1 prepare y_pred_xy
         y_pred_xy = tf.sigmoid(y_pred[..., 0:2])  # scale x to 0~1
-        y_pred_wh = tf.sigmoid(y_pred[..., 2:4])
-        y_pred_confidence = tf.sigmoid(y_pred[..., 4:5]) # scale confidence to 0~1 #（4，13，13，3，1）
+
+        def prepare_anchors_xy(feats):
+            feats_shape = tf.shape(feats)[1:3]
+
+            grid_shape_y = feats_shape[0]
+            grid_shape_x = feats_shape[1]
+
+            range_y = tf.range(start=0, limit=grid_shape_y)  # [0,1,2,...,11,12]
+            range_y = tf.expand_dims(range_y, axis=-1)  # [[0],[1],[2],...,[11],[12]]
+            for _ in range(2):  # add to dimension of 4
+                range_y = tf.expand_dims(range_y, axis=-1)
+            # print(range_y)
+            tile_y = tf.tile(range_y, [1, grid_shape_x, 1, 1])
+            tile_y = tf.tile(tile_y, [1, 1, 3, 1])
+            #
+            range_x = tf.range(start=0, limit=grid_shape_x)
+            range_x = tf.expand_dims(range_x, axis=0)
+            for _ in range(2):  # add to dimension of 4
+                range_x = tf.expand_dims(range_x, axis=-1)
+            tile_x = tf.tile(range_x, [grid_shape_y, 1, 1, 1])
+            tile_x = tf.tile(tile_x, [1, 1, 3, 1])
+            #
+            anchors_xy = tf.concat([tile_x, tile_y], axis=-1)
+            anchors_xy = tf.cast(anchors_xy, dtype=tf.float32)
+
+            # # --------------------
+            # sess = tf.Session()
+            # sess.run(tf.global_variables_initializer())
+            # # ==========
+            # data2 = np.ones(shape=(7, 13, 17, 3, 2), dtype=np.float32)
+            # print(range_y.eval(session=sess,feed_dict={feats:data2}))
+            # print(tile_y.eval(session=sess,feed_dict={feats:data2}))
+            # print(tile_x.eval(session=sess,feed_dict={feats:data2}))
+            # print(anchors_xy.eval(session=sess,feed_dict={feats:data2}))
+            # sess.close()
+            return anchors_xy
+
+        anchors_xy = prepare_anchors_xy(y_pred) # shape: (13,13,3,2)
+        print("y_pred_xy shape:",y_pred_xy.shape)
+        print("anchors_xy shape:",anchors_xy.shape)
+
+        y_pred_xy += anchors_xy
+        # 1.2 prepare y_pred_wh
+        anchor_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]  # 13*13,26*26,52*52
+
+        y_pred_wh = tf.exp(y_pred[..., 2:4])  # scale confidence to 0~1 #（4，13，13，3，1）
+
+        grid_num = int((y_pred_wh.shape.dims[1].value / 13) // 2)
+        p_wh = tf.zeros_like(y_pred_wh,dtype=tf.float32)
+        cell_size = int(self.config['model']['image_size'][0] / y_pred_wh.shape.dims[1].value)
+        print(cell_size)
+        for i in range(3):
+            anchor_index = anchor_mask[grid_num][i] * 2
+            p_wh[:, :, :, i, :] = np.array(self.anchors[anchor_index:anchor_index + 2]) / cell_size
+
+        y_pred_wh = y_pred_wh * p_wh
+        # 1.3 prepare y_pred confidence classes
+        y_pred_confidence = tf.sigmoid(y_pred[..., 4:5])
         y_pred_classes = y_pred[..., 5:]
 
         y_true_xy = y_true[..., 0:2]
@@ -263,7 +322,7 @@ class YOLO_V3():
         y_true_classes = y_true[..., 5:]
 
         obj_mask = y_true[..., 4:5]  # 1 means the box exists object
-        no_obj_mask = tf.subtract(1.0, obj_mask)
+        no_obj_mask = tf.subtract(tf.constant(1, shape=obj_mask.get_shape(), dtype=tf.float32), obj_mask)
 
         # 2. calc xy loss
         xy_minus = tf.subtract(y_true_xy, y_pred_xy)
@@ -294,9 +353,9 @@ class YOLO_V3():
         final_classes_loss = classes_loss
 
         total_loss = tf.add_n([final_xy_loss, final_wh_loss, final_con_loss, final_no_con_loss, final_classes_loss])
-        # batch_size = y_pred.get_shape()[0].value
-        total_loss = tf.divide(total_loss,self.batch_size)
-        # total_loss = tf.Print(total_loss, [total_loss], message='total Loss \t')
+        batch_size = y_pred.get_shape()[0].value
+        total_loss = tf.divide(total_loss, tf.convert_to_tensor(batch_size, dtype=tf.float32))
+        total_loss = tf.Print(total_loss, [total_loss], message='total Loss \t')
 
         #########
         # init_op = tf.global_variables_initializer()
@@ -305,9 +364,10 @@ class YOLO_V3():
         #
         #     print(sess.run([final_xy_loss,final_wh_loss,final_con_loss,final_no_con_loss,final_classes_loss]))
         #     print('total_loss :',sess.run(total_loss))
-        #     tf.Print()
+        #     # tf.Print()
 
         return total_loss
+
     def train_detection(self,train_generator,val_generator):
         filepath = "./tmp/detection_ckpt_{epoch:02d}_{val_acc:.2f}.h5"
 
