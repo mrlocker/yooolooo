@@ -378,10 +378,12 @@ class YOLO_V3():
         final_classes_loss = classes_loss
 
         total_loss = tf.add_n([final_xy_loss, final_wh_loss, final_con_loss, final_no_con_loss, final_classes_loss])
-        batch_size = y_pred.get_shape()[0].value
-        # total_loss = tf.divide(total_loss, tf.convert_to_tensor(batch_size, dtype=tf.float32))
-        total_loss = tf.reduce_mean(total_loss)
-        total_loss = tf.Print(total_loss, [total_loss], message='total Loss \t')
+        # print("total loss shape: ",total_loss.get_shape())
+        batch_size = tf.shape(y_pred)[0]
+        batch_size = tf.cast(batch_size,dtype=tf.float32)
+        total_loss /= batch_size
+
+        # total_loss = tf.Print(total_loss, [total_loss], message='total Loss \t')
 
         #########
         # init_op = tf.global_variables_initializer()
@@ -400,7 +402,7 @@ class YOLO_V3():
         checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_acc',
                                      verbose=1, save_best_only=False)
         self.model.compile(optimizer=Adam(),loss=[self.yolo_loss,self.yolo_loss,self.yolo_loss])
-        self.model.fit_generator(generator=train_generator,epochs=self.config['train']['epochs'],callbacks=[checkpoint])
+        self.model.fit_generator(generator=train_generator,epochs=self.config['train']['epochs'],callbacks=[])
     def evaluate(self,generator):
         print('开始评估模型性能')
         self.load_weights(self.config['model']['final_model_weights'])
