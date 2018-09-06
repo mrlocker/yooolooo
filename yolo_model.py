@@ -347,7 +347,7 @@ class YOLO_V3():
         y_true_classes = y_true[..., 5:]
 
         obj_mask = y_true[..., 4:5]  # 1 means the box exists object
-        no_obj_mask = tf.subtract(tf.constant(1, shape=obj_mask.get_shape(), dtype=tf.float32), obj_mask)
+        no_obj_mask = tf.subtract(tf.ones_like(obj_mask,dtype=tf.float32), obj_mask)
 
         # 2. calc xy loss
         xy_minus = tf.subtract(y_true_xy, y_pred_xy)
@@ -379,7 +379,8 @@ class YOLO_V3():
 
         total_loss = tf.add_n([final_xy_loss, final_wh_loss, final_con_loss, final_no_con_loss, final_classes_loss])
         batch_size = y_pred.get_shape()[0].value
-        total_loss = tf.divide(total_loss, tf.convert_to_tensor(batch_size, dtype=tf.float32))
+        # total_loss = tf.divide(total_loss, tf.convert_to_tensor(batch_size, dtype=tf.float32))
+        total_loss = tf.reduce_mean(total_loss)
         total_loss = tf.Print(total_loss, [total_loss], message='total Loss \t')
 
         #########
