@@ -257,7 +257,7 @@ class YOLO_V3():
         # 1.1 prepare y_pred_xy
         y_pred_xy = tf.sigmoid(y_pred[..., 0:2])  # scale x to 0~1
 
-        def prepare_anchors_xy(feats):
+        def prepare_cxcy(feats):
             feats_shape = tf.shape(feats)[1:3]
 
             grid_shape_y = feats_shape[0]
@@ -293,24 +293,49 @@ class YOLO_V3():
             # sess.close()
             return anchors_xy
 
-        anchors_xy = prepare_anchors_xy(y_pred) # shape: (13,13,3,2)
+        cxcy = prepare_cxcy(y_pred) # shape: (13,13,3,2)
         print("y_pred_xy shape:",y_pred_xy.shape)
-        print("anchors_xy shape:",anchors_xy.shape)
+        print("cxcy shape:",cxcy.shape)
 
-        y_pred_xy += anchors_xy
+        y_pred_xy += cxcy
         # 1.2 prepare y_pred_wh
-        anchor_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]  # 13*13,26*26,52*52
 
         y_pred_wh = tf.exp(y_pred[..., 2:4])  # scale confidence to 0~1 #（4，13，13，3，1）
 
-        grid_num = int((y_pred_wh.shape.dims[1].value / 13) // 2)
-        p_wh = tf.zeros_like(y_pred_wh,dtype=tf.float32)
-        cell_size = int(self.config['model']['image_size'][0] / y_pred_wh.shape.dims[1].value)
-        print(cell_size)
-        for i in range(3):
-            anchor_index = anchor_mask[grid_num][i] * 2
-            p_wh[:, :, :, i, :] = np.array(self.anchors[anchor_index:anchor_index + 2]) / cell_size
+        def prepare_anchors_wh(whfeats):
+            anchor_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]  # 13*13,26*26,52*52
+            grids = whfeats.shape.dims[1].value
+            cell_size = int(self.config['model']['image_size'][0] / grids)
 
+            mask_index = int((grids / 13) // 2)
+
+            grid_shape = tf.shape(whfeats)[1:3]
+            grid_shape_y = grid_shape[0]
+            grid_shape_x = grid_shape[1]
+
+            three_scaled_anchors = []
+            for i in range(3):
+                anchor_index = anchor_mask[mask_index][i] * 2
+                current_anchor = self.anchors[anchor_index:anchor_index + 2]
+                current_scaled_anchor = np.array(current_anchor) / cell_size
+                three_scaled_anchors.append(current_scaled_anchor)
+
+            three_scaled_anchors = tf.convert_to_tensor(np.array(three_scaled_anchors))  # 3x2
+            three_scaled_anchors = tf.expand_dims(three_scaled_anchors, axis=0)  # 1x3x2
+            three_scaled_anchors = tf.expand_dims(three_scaled_anchors, axis=0)  # 1x1x3x2
+
+            p_wh = tf.tile(three_scaled_anchors, [grid_shape_y, grid_shape_x, 1, 1])
+            p_wh = tf.cast(p_wh,tf.float32)
+            return p_wh  # shape:(grdi_shape_y,grid_shape_x,3,2)
+            # sess = tf.Session()
+            # sess.run(tf.global_variables_initializer())
+            #
+            # data = np.ones(shape=(7, 13, 17, 3, 2), dtype=np.float32)
+            #
+            # print(tile_anchors.eval(session=sess,feed_dict={whfeats:data}))
+            # print(tile_anchors.eval(session=sess,feed_dict={whfeats:data}).shape)
+
+        p_wh = prepare_anchors_wh(y_pred_wh)
         y_pred_wh = y_pred_wh * p_wh
         # 1.3 prepare y_pred confidence classes
         y_pred_confidence = tf.sigmoid(y_pred[..., 4:5])
