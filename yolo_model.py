@@ -68,6 +68,7 @@ class YOLO_V3():
     def __init__(self,config):
         self.config = config
         self.shits = []
+        self.input_size = self.config['model']['image_size']
         self.inputs = Input(shape=(self.config['model']['image_size'][0], self.config['model']['image_size'][1], 3))
         self.num_classes = len(self.config['model']['classes'])
         self.batch_size = self.config['model']['batch_size']
@@ -246,18 +247,7 @@ class YOLO_V3():
         plot_model(self.model)
         print("目标检测网络构建完毕")
 
-    def yolo_loss(self,y_true, y_pred):
-        # batch_index,cy,cx,sub_anchor_index,inner_index
-        # 1. batch中的数据逐个循环
-        print("y_true type:%s, y_pred type:%s" % (type(y_true), type(y_pred)))
-        lambda_coord = 5
-        lambda_noobj = 0.5
-
-        # 1. prepare y_pred
-        # 1.1 prepare y_pred_xy
-        y_pred_xy = tf.sigmoid(y_pred[..., 0:2])  # scale x to 0~1
-
-        def prepare_cxcy(feats):
+    def prepare_cxcy(self,feats):
             feats_shape = tf.shape(feats)[1:3]
 
             grid_shape_y = feats_shape[0]
@@ -292,17 +282,8 @@ class YOLO_V3():
             # print(anchors_xy.eval(session=sess,feed_dict={feats:data2}))
             # sess.close()
             return anchors_xy
+    def prepare_anchors_wh(self,whfeats):
 
-        cxcy = prepare_cxcy(y_pred) # shape: (13,13,3,2)
-        print("y_pred_xy shape:",y_pred_xy.shape)
-        print("cxcy shape:",cxcy.shape)
-
-        y_pred_xy += cxcy
-        # 1.2 prepare y_pred_wh
-
-        y_pred_wh = tf.exp(y_pred[..., 2:4])  # scale confidence to 0~1 #（4，13，13，3，1）
-
-        def prepare_anchors_wh(whfeats):
             anchor_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]  # 13*13,26*26,52*52
             grids = whfeats.shape.dims[1].value
             cell_size = int(self.config['model']['image_size'][0] / grids)
@@ -335,7 +316,23 @@ class YOLO_V3():
             # print(tile_anchors.eval(session=sess,feed_dict={whfeats:data}))
             # print(tile_anchors.eval(session=sess,feed_dict={whfeats:data}).shape)
 
-        p_wh = prepare_anchors_wh(y_pred_wh)
+    def yolo_loss(self,y_true, y_pred):
+        # batch_index,cy,cx,sub_anchor_index,inner_index
+        # 1. batch中的数据逐个循环
+        print("y_true type:%s, y_pred type:%s" % (type(y_true), type(y_pred)))
+        lambda_coord = 5
+        lambda_noobj = 0.5
+
+        # 1. prepare y_pred
+        # 1.1 prepare y_pred_xy
+        y_pred_xy = tf.sigmoid(y_pred[..., 0:2])  # scale x to 0~1
+        cxcy = self.prepare_cxcy(y_pred) # shape: (13,13,3,2)
+        print("y_pred_xy shape:",y_pred_xy.shape)
+        print("cxcy shape:",cxcy.shape)
+        y_pred_xy += cxcy
+        # 1.2 prepare y_pred_wh
+        y_pred_wh = tf.exp(y_pred[..., 2:4])  # scale confidence to 0~1 #（4，13，13，3，1）
+        p_wh = self.prepare_anchors_wh(y_pred_wh)
         y_pred_wh = y_pred_wh * p_wh
         # 1.3 prepare y_pred confidence classes
         y_pred_confidence = tf.sigmoid(y_pred[..., 4:5])
@@ -415,7 +412,6 @@ class YOLO_V3():
             out2 = pr_result[2][i]
             out = [out0,out1,out2]
             self.inference(out)
-
     def calc_classes_score(self,raw_output):
         confidence = raw_output[..., 4:5]
         classes = raw_output[..., 5:]
@@ -432,49 +428,61 @@ class YOLO_V3():
     def regulize_single_raw_output(self,raw_output):
         if len(raw_output.shape)<5:
             raw_output = np.expand_dims(raw_output,axis=0)
+        # anchor_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]  # 13*13,26*26,52*52
 
         anchors = self.config['model']['anchors']
-        anchor_52 = anchors[0 * 2:3 * 2]
-        anchor_26 = anchors[3 * 2:6 * 2]
-        anchor_13 = anchors[6 * 2:9 * 2]
+        # anchor_52 = anchors[0 * 2:3 * 2]
+        # anchor_26 = anchors[3 * 2:6 * 2]
+        # anchor_13 = anchors[6 * 2:9 * 2]
 
         grid = raw_output.shape[1]
-        grid_coord = int(416 / grid)
+        # grid_coord = int(self.input_size[0] / grid)
         bboxes_xy = raw_output[..., 0:2]
         bboxes_wh = raw_output[..., 2:4]
-        bboxes_xy = sigmoid(bboxes_xy)
-        bboxes_wh = sigmoid(bboxes_wh) # 这里和训练时一样，都加了sigmoid
+        cxcy = self.prepare_cxcy(bboxes_xy)
+        p_wh = self.prepare_anchors_wh(tf.convert_to_tensor(bboxes_wh))
+        with tf.Session() as sess:
+            # sess.run(tf.global_variables_initializer())
+            cxcy = sess.run(cxcy)
+            p_wh = sess.run(p_wh)
+        bboxes_xy = sigmoid(bboxes_xy)+cxcy
+        bboxes_wh = np.exp(bboxes_wh)*p_wh
 
-        c_mask = np.zeros(shape=bboxes_xy.shape)
-        for batch_i in range(c_mask.shape[0]):
-            for cy in range(c_mask.shape[1]):
-                for cx in range(c_mask.shape[2]):
-                    for j in range(c_mask.shape[3]):
-                        c_mask[batch_i][cy][cx][j] = np.array([cx * grid_coord, cy * grid_coord])
-
-        bboxes_xy = bboxes_xy + c_mask
-        bboxes_wh = np.exp(bboxes_wh)
+        # c_mask = np.zeros(shape=bboxes_xy.shape)
+        # for batch_i in range(c_mask.shape[0]):
+        #     for cy in range(c_mask.shape[1]):
+        #         for cx in range(c_mask.shape[2]):
+        #             for j in range(c_mask.shape[3]):
+        #                 c_mask[batch_i][cy][cx][j] = np.array([cx * grid_coord, cy * grid_coord])
+        #
+        # bboxes_xy = bboxes_xy + c_mask
+        # bboxes_wh = np.exp(bboxes_wh)
         # print('bboxes_wh:',bboxes_wh[1,3,7,0])
-        anchors_big = np.zeros(shape=bboxes_wh.shape, dtype=np.float32)
-        for i in range(3):
-            if grid == 13:
-                anchors_big[:, :, :, i, :] = np.array(anchor_13[i * 2:(i + 1) * 2])
-            elif grid == 26:
-                anchors_big[:, :, :, i, :] = np.array(anchor_26[i * 2:(i + 1) * 2])
-            elif grid == 52:
-                anchors_big[:, :, :, i, :] = np.array(anchor_52[i * 2:(i + 1) * 2])
-            else:
-                raise Exception('wrong grid size!', grid)
-
-        bboxes_wh = bboxes_wh * anchors_big
+        # anchors_big = np.zeros(shape=bboxes_wh.shape, dtype=np.float32)
+        # for i in range(3):
+        #     if grid == 13:
+        #         anchors_big[:, :, :, i, :] = np.array(anchor_13[i * 2:(i + 1) * 2])
+        #     elif grid == 26:
+        #         anchors_big[:, :, :, i, :] = np.array(anchor_26[i * 2:(i + 1) * 2])
+        #     elif grid == 52:
+        #         anchors_big[:, :, :, i, :] = np.array(anchor_52[i * 2:(i + 1) * 2])
+        #     else:
+        #         raise Exception('wrong grid size!', grid)
+        #
+        # bboxes_wh = bboxes_wh * anchors_big
         # print('bboxes_wh:',bboxes_wh[1,3,7,1])
-
+        # scale to real world size
+        cell_size = self.input_size[0]/grid
+        bboxes_xy *= cell_size
+        bboxes_wh *= cell_size
         classes_score = self.calc_classes_score(raw_output)
         bboxes = np.concatenate((bboxes_xy, bboxes_wh, classes_score), axis=-1)
 
         return bboxes
         # sort
     def inference(self,output):
+        # 输入output为一个batch的数据
+
         thresh = self.config['model']['threshold']
         r1 = self.regulize_single_raw_output(output[0])
         r2 = self.regulize_single_raw_output(output[1])
@@ -495,19 +503,19 @@ class YOLO_V3():
             # 2.按score排序。（以每个bbox里面最大的score记）
             sorted_bboxes = sorted(all_bboxes, key=lambda item: np.max(item[4:]), reverse=True)
             # 2.5 compress 移除class_score小于thresh的bbox
-            compressed_sorted_bboxes = []
-            for i, box in enumerate(sorted_bboxes):
-                if np.max(box[4:]) <= thresh:
-                    compressed_sorted_bboxes = sorted_bboxes[0:i]
-                    break
-            sorted_bboxes = compressed_sorted_bboxes
-            print('压缩后的bboxes:', len(compressed_sorted_bboxes))
+            # compressed_sorted_bboxes = []
+            # for i, box in enumerate(sorted_bboxes):
+            #     if np.max(box[4:]) <= thresh:
+            #         compressed_sorted_bboxes = sorted_bboxes[0:i]
+            #         break
+            # sorted_bboxes = compressed_sorted_bboxes
+            # print('压缩后的bboxes:', len(compressed_sorted_bboxes))
             # 3. 开始nms
             # final_bboxes = self.do_nms(sorted_bboxes,self.config['model']['nms_iou_threshold'])
             final_bboxes = self.do_tf_nms(sorted_bboxes,self.config['model']['nms_iou_threshold'])
             print('final bboxes count:', len(final_bboxes))
             if self.debug:
-                img = np.zeros(shape=[416, 416, 3], dtype=np.uint8)
+                img = np.zeros(shape=[self.input_size[0], self.input_size[1], 3], dtype=np.uint8)
                 after_img = draw_bboxes2(img, final_bboxes)
                 cv2.imshow('after img', after_img)
                 cv2.waitKey(0)
