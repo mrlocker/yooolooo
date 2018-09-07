@@ -411,7 +411,7 @@ class YOLO_V3():
             out1 = pr_result[1][i]
             out2 = pr_result[2][i]
             out = [out0,out1,out2]
-            self.inference(out)
+            self.inference(out)# inference为按照单个batch计算的。
     def calc_classes_score(self,raw_output):
         confidence = raw_output[..., 4:5]
         classes = raw_output[..., 5:]
@@ -426,6 +426,7 @@ class YOLO_V3():
         # print('r2:',r2[0,0,0,0])
         return r2
     def regulize_single_raw_output(self,raw_output):
+        # 规范化输出，输出为 [x,y,w,h,classes....]。x,y,w,h均为真实尺寸
         if len(raw_output.shape)<5:
             raw_output = np.expand_dims(raw_output,axis=0)
         # anchor_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]  # 13*13,26*26,52*52
@@ -503,13 +504,13 @@ class YOLO_V3():
             # 2.按score排序。（以每个bbox里面最大的score记）
             sorted_bboxes = sorted(all_bboxes, key=lambda item: np.max(item[4:]), reverse=True)
             # 2.5 compress 移除class_score小于thresh的bbox
-            # compressed_sorted_bboxes = []
-            # for i, box in enumerate(sorted_bboxes):
-            #     if np.max(box[4:]) <= thresh:
-            #         compressed_sorted_bboxes = sorted_bboxes[0:i]
-            #         break
-            # sorted_bboxes = compressed_sorted_bboxes
-            # print('压缩后的bboxes:', len(compressed_sorted_bboxes))
+            compressed_sorted_bboxes = []
+            for i, box in enumerate(sorted_bboxes):
+                if np.max(box[4:]) <= thresh:
+                    compressed_sorted_bboxes = sorted_bboxes[0:i]
+                    break
+            sorted_bboxes = compressed_sorted_bboxes
+            print('压缩后的bboxes:', len(compressed_sorted_bboxes))
             # 3. 开始nms
             # final_bboxes = self.do_nms(sorted_bboxes,self.config['model']['nms_iou_threshold'])
             final_bboxes = self.do_tf_nms(sorted_bboxes,self.config['model']['nms_iou_threshold'])
