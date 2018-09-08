@@ -123,7 +123,7 @@ class St_Generator(Sequence):
         return int(len(self.image_anno_list)/self.batch_size)
     def __getitem__(self, idx):
         x_batch = np.zeros(shape=(self.batch_size,self.image_size[0],self.image_size[1],3))
-        y_batch = np.zeros(shape=(self.batch_size,self.grid,self.grid,3,4+1+len(self.classes)))#8*13*13*3*(4+1+classes) batch size*grid width*grid height*anchors*(4+1+classes)
+        # y_batch = np.zeros(shape=(self.batch_size,self.grid,self.grid,3,4+1+len(self.classes)))#8*13*13*3*(4+1+classes) batch size*grid width*grid height*anchors*(4+1+classes)
         images = []
         images_bboxes = []
         images_labels = []

@@ -105,7 +105,6 @@ def draw_aug_bboxes(aug_img, bboxes,labels):
         cv2.circle(aug_img,center=(int(rect.center_x),int(rect.center_y)),radius=1,color=(0,0,255),thickness=-1)
 
     return aug_img
-
 def draw_bboxes(img, bboxes):
     # bboxes are a np array first 4 elems are x1,y1,x2,y2
     pred_color = (255,255,255)
@@ -114,12 +113,51 @@ def draw_bboxes(img, bboxes):
         # cv2.putText(img, labels[i] + ' ', (rect.x1 + 2, rect.y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, pred_color)
         # cv2.circle(img, center=(int(rect.center_x), int(rect.center_y)), radius=1, color=(0, 0, 255), thickness=-1)
     return img
-def draw_bboxes2(img, bboxes):
-    pred_color = (255,255,255)
+def draw_bboxes2(img, bboxes,color=(255,255,255)):
     for i,bbox in enumerate(bboxes):
-        cv2.rectangle(img, pt1=(int(bbox.x1), int(bbox.y1)), pt2=(int(bbox.x2), int(bbox.y2)), color=pred_color, thickness=1)
-        cv2.putText(img, "%s %.2f"%(bbox.label,bbox.confidence), (bbox.x1 + 2, bbox.y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, pred_color)
+        cv2.rectangle(img, pt1=(int(bbox.x1), int(bbox.y1)), pt2=(int(bbox.x2), int(bbox.y2)), color=color, thickness=1)
+        cv2.putText(img, "%s %.2f"%(bbox.label,bbox.confidence), (bbox.x1 + 2, bbox.y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color)
     return img
+
+def single_class_gt_detection_match(gts,detections):
+    for i in range(len(detections)):
+        detections[i].match = False
+    detections = sorted(detections,key= lambda item:item.confidence,reverse=True)
+    for gt in gts:
+        rect1 = [gt.x1,gt.y1,gt.x2,gt.y2]
+        for i,dt in enumerate(detections):
+            rect2 = [dt.x1,dt.y1,dt.x2,dt.y2]
+            # print("iou:",iou2(rect1, rect2))
+            if iou2(rect1,rect2) > 0.5:
+                detections[i].match = True
+                break
+    rects = [[d.confidence,d.match] for d in detections]
+    return rects
+
+def get_single_image_gt_count(gts,all_labels):
+    gtc = {}
+    for label in all_labels:
+        gtc[label] = 0
+    for gt in gts:
+        gtc[gt.label] += 1
+    return gtc
+def single_image_detection_evaluate(gts,detections,all_labels):
+    r = {}
+    for current_label in all_labels:
+        gts_current_label = []
+        detections_current_label = []
+        for gt in gts:
+            if gt.label == current_label:
+                gts_current_label.append(gt)
+        for detection in detections:
+            if detection.label == current_label:
+                detections_current_label.append(detection)
+
+        # 这两个变量存储这当前类别内所有的bbox
+        match_result = single_class_gt_detection_match(gts_current_label,detections_current_label)
+        r[current_label] = match_result
+    gtc = get_single_image_gt_count(gts,all_labels)
+    return r,gtc
 
 
 def ap(detections, gt_count):
@@ -153,4 +191,42 @@ def ap(detections, gt_count):
 
 
 if __name__ == "__main__":
-    pass
+    from yolo_model import *
+
+
+    def test_single_class_gt_detection_match():
+        gts = [ Bbox([10,20,30,40],"WaterDrop",confidence=-1),
+        Bbox([100,200,150,275],"WaterDrop",confidence=-1),
+        Bbox([50,50,300,90],"WaterDrop",confidence=-1),
+        Bbox([300,240,310,340],"WaterDrop",confidence=-1)]
+
+        dts = [ Bbox([15,10,28,35],"WaterDrop",confidence=0.93),
+        Bbox([108,208,150,275],"WaterDrop",confidence=0.97),
+        Bbox([102,202,151,276],"WaterDrop",confidence=0.96),
+        Bbox([110,110,146,140],"WaterDrop",confidence=0.8),
+        Bbox([301,241,311,341],"WaterDrop",confidence=0.86),
+                Bbox([10, 30, 68, 65], "WaterDrop", confidence=0.93)]
+
+        bg = np.zeros(shape=(416,416,3),dtype=np.uint8)
+        img_gt = draw_bboxes2(bg,gts,(0,255,0))
+        img_gt_dt = draw_bboxes2(img_gt,dts,(0,0,255))
+
+
+        r = single_class_gt_detection_match(gts,dts)
+        cv2.imshow('gtdt',img_gt_dt)
+        cv2.waitKey(0)
+    def test_get_single_image_gt_count():
+        gts = [ Bbox([10,20,30,40],"WaterDrop",confidence=-1),
+        Bbox([100,200,150,275],"WaterDrop",confidence=-1),
+        Bbox([50,50,300,90],"Upwarping",confidence=-1),
+        Bbox([300,240,310,340],"WaterDrop",confidence=-1)]
+        get_single_image_gt_count(gts,[
+            "WaterDrop",
+            "Upwarping",
+            "HorizontalCrack",
+            "Scale",
+            "RollMark",
+            "WaterStain",
+            "VerticalCrack"
+        ])
+    test_get_single_image_gt_count()

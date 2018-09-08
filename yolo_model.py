@@ -57,13 +57,13 @@ class Basic_Detection():
         shit = Reshape((shit.shape.dims[1].value, shit.shape.dims[2].value, 3, int(shit.shape.dims[3].value / 3)))(shit)
         return shit
 class Bbox():
-    def __init__(self):
-        self.x1 = 0
-        self.y1 = 0
-        self.x2 = 0
-        self.y2 = 0
-        self.label = "Undefined"
-        self.confidence = 0.0
+    def __init__(self,coord=(0,0,0,0),label="Undefined",confidence = 0):
+        self.x1 = coord[0]
+        self.y1 = coord[1]
+        self.x2 = coord[2]
+        self.y2 = coord[3]
+        self.label = label
+        self.confidence = confidence   # -1 means ground truth
 class YOLO_V3():
     def __init__(self,config):
         self.config = config
@@ -397,11 +397,50 @@ class YOLO_V3():
                                      verbose=1, save_best_only=False)
         self.model.compile(optimizer=Adam(),loss=[self.yolo_loss,self.yolo_loss,self.yolo_loss])
         self.model.fit_generator(generator=train_generator,epochs=self.config['train']['epochs'],callbacks=[])
+
     def evaluate(self,generator):
         print('开始评估模型性能')
-        self.load_weights(self.config['model']['final_model_weights'])
+        # self.load_weights(self.config['model']['final_model_weights']) TODO:临时注释，正式版需取消注释
         print('载入完整已训练模型')
-        pr_result = self.model.predict_generator(generator)
+        # pr_result = self.model.predict_generator(generator)# 这个函数暂时不用，因为无法获取ground truth
+        total_steps = len(generator)
+
+        cls_result = {}
+        gt_counts = {}
+        for c in self.classes:
+            cls_result[c]=[]
+            gt_counts[c] = 0
+        for i in range(total_steps):
+            x,y = generator.__getitem__(i)
+            bboxes = generator.aug_bbses
+            labels = generator.aug_labels
+            raw_outputs = self.model.predict_on_batch(x)#TODO:看来evluate_genenrator这个函数需要自己写了。因为要获取truth信息
+            winners = self.inference(raw_outputs)
+            batch_size = len(bboxes)
+
+            for j in range(batch_size):# iterate each image
+                # detcetion_result = np.zeros(shape=(len(winners[j]),2))
+                gts = []
+                for k in range(len(labels[j])):  # current image's bbox labels
+                    current_bbox = bboxes[j].bounding_boxes[k]
+                    current_label = labels[j][k]
+                    b = Bbox()
+                    b.label = current_label
+                    b.x1 = current_bbox.x1
+                    b.y1 = current_bbox.y1
+                    b.x2 = current_bbox.x2
+                    b.y2 = current_bbox.y2
+                    b.confidence = -1 # means ground truth
+                    gts.append(b)
+                detections = winners[j]
+                r,gt_count = single_image_detection_evaluate(gts,detections,self.classes)
+                for c in self.classes:
+                    cls_result[c].extend(r[c])
+                    gt_counts[c] += gt_count[c]
+        self.do_AP(cls_result,gt_counts)
+        # ap()
+                    # cls_result[c].append(bboxes[j][k])
+            # cls_result[c].append()
         # list = [[ndarray][ndarray][ndarray]] 464*13*13*3*(5+7) 464*26*26*3*(5+7) 464*52*52*3*(5+7)
         # for i in range(pr_result[0].shape[0]):
         #     out0 = pr_result[0][i]
@@ -409,10 +448,11 @@ class YOLO_V3():
         #     out2 = pr_result[2][i]
         #     out = [out0,out1,out2]
         #     result = self.inference([out])[0]# inference为按照单个batch计算的。
-        pr0 = pr_result[0][0]
-        pr1 = pr_result[1][0]
-        pr2 = pr_result[2][0]
-        winners = self.inference([pr0,pr1,pr2])
+        # pr0 = pr_result[0][0]
+        # pr1 = pr_result[1][0]
+        # pr2 = pr_result[2][0]
+        # winners = self.inference([pr0,pr1,pr2])
+        # 我需要GRound Truth！！！！！！
         pass
 
     def calc_classes_score(self,raw_output):
@@ -486,7 +526,6 @@ class YOLO_V3():
         # sort
     def inference(self,output):
         # 输入output为一个batch的数据
-
         thresh = self.config['model']['threshold']
         r1 = self.regulize_single_raw_output(output[0])
         r2 = self.regulize_single_raw_output(output[1])
@@ -592,7 +631,7 @@ class YOLO_V3():
                 bbox.confidence = float(np.max(b[indices[i]][4:]))
                 bboxes_on_image.append(bbox)
         return bboxes_on_image
-    def do_mAP(self,bboxes):
+    def do_mAP(self,bboxes,gt_count):
         #计算mAP，输入的bboxes应为经过nms抑制过的最终bboxes输出，即self.inference的输出
         pass
     def do_AP(self):
