@@ -71,6 +71,7 @@ class YOLO_V3():
         self.input_size = self.config['model']['image_size']
         self.inputs = Input(shape=(self.config['model']['image_size'][0], self.config['model']['image_size'][1], 3))
         self.num_classes = len(self.config['model']['classes'])
+        self.classes = self.config['model']['classes']
         self.batch_size = self.config['model']['batch_size']
         self.debug = self.config['model']['debug']
         # yolo算法采用前后端分离。后端指的是主干网络。主干网络配合不同的前端，可以实现分类或者检测的目的。
@@ -81,12 +82,8 @@ class YOLO_V3():
         elif self.config['model']['type'] == "detection":
             self.construct_detection_model()
             self.anchors = self.config['model']['anchors']
-        #self.load_pretrain_weights()
+        self.load_pretrain_weights()
 
-        # official_backbone = load_model('weights/darknet53.h5',compile=False)
-        # official_backbone.summary(positions=[.33, .6, .7, 1])
-        # a=0
-        # exit()
     def construct_backbone(self,inputs):
         # 该主干网络和yolo v3论文上花的那个图一模一样。不包括最后三层，那三层放到了前端里面
         self.shits.append(Basic_Conv(filters=32, kernel_size=3)(inputs))
@@ -406,15 +403,21 @@ class YOLO_V3():
         print('载入完整已训练模型')
         pr_result = self.model.predict_generator(generator)
         # list = [[ndarray][ndarray][ndarray]] 464*13*13*3*(5+7) 464*26*26*3*(5+7) 464*52*52*3*(5+7)
-        for i in range(pr_result[0].shape[0]):
-            out0 = pr_result[0][i]
-            out1 = pr_result[1][i]
-            out2 = pr_result[2][i]
-            out = [out0,out1,out2]
-            self.inference(out)# inference为按照单个batch计算的。
+        # for i in range(pr_result[0].shape[0]):
+        #     out0 = pr_result[0][i]
+        #     out1 = pr_result[1][i]
+        #     out2 = pr_result[2][i]
+        #     out = [out0,out1,out2]
+        #     result = self.inference([out])[0]# inference为按照单个batch计算的。
+        pr0 = pr_result[0][0]
+        pr1 = pr_result[1][0]
+        pr2 = pr_result[2][0]
+        winners = self.inference([pr0,pr1,pr2])
+        pass
+
     def calc_classes_score(self,raw_output):
-        confidence = raw_output[..., 4:5]
-        classes = raw_output[..., 5:]
+        confidence = sigmoid(raw_output[..., 4:5])
+        classes = softmax(raw_output[..., 5:])
         classes_scores = classes * confidence
         # print(raw_output.shape,confidence.shape,classes.shape,classes_scores.shape)
         # print('classes:',classes[0,0,0,0])

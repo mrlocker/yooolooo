@@ -8,8 +8,8 @@ def preprocess(x):
 
 def softmax(list):
     e1 = np.exp(list)
-    d2 = np.sum(e1)
-    result = e1/np.sum(d2)
+    d2 = np.sum(e1,axis=-1,keepdims=True)
+    result = e1/d2
     return result
 
 def sigmoid(list):
