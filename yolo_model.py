@@ -437,7 +437,8 @@ class YOLO_V3():
                 for c in self.classes:
                     cls_result[c].extend(r[c])
                     gt_counts[c] += gt_count[c]
-        self.do_AP(cls_result,gt_counts)
+        aps = self.do_AP(cls_result,gt_counts)
+        self.do_mAP(aps)
         # ap()
                     # cls_result[c].append(bboxes[j][k])
             # cls_result[c].append()
@@ -631,11 +632,25 @@ class YOLO_V3():
                 bbox.confidence = float(np.max(b[indices[i]][4:]))
                 bboxes_on_image.append(bbox)
         return bboxes_on_image
-    def do_mAP(self,bboxes,gt_count):
+    def do_mAP(self,aps):
         #计算mAP，输入的bboxes应为经过nms抑制过的最终bboxes输出，即self.inference的输出
-        pass
-    def do_AP(self):
-        pass
+        count = 0
+        sum = 0
+        for key in aps:
+            sum+=aps[key]
+            count+=1
+        mAP = sum/count
+        print("mAP: ",mAP)
+        return mAP
+    def do_AP(self,bboxes,gt_counts):
+        all_aps = {}
+        for c in self.classes:
+            single_class_match = bboxes[c]
+            single_class_gt_count = gt_counts[c]
+            average_precision = ap(single_class_match,single_class_gt_count)
+            print("%s AP: %f"%(c,average_precision))
+            all_aps[c] = average_precision
+        return all_aps
 ####-------------------- detection end        ---------------####
 
 def prepare_data(train_folder,val_folder,batch_size):
