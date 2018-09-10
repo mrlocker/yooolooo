@@ -9,11 +9,11 @@ def preprocess(x):
 def softmax(list):
     e1 = np.exp(list)
     d2 = np.sum(e1,axis=-1,keepdims=True)
-    result = e1/d2
+    result = e1/(d2+1e-6)
     return result
 
 def sigmoid(list):
-    return 1/(1 +(1/np.exp(list)))
+    return 1/(1 +(1/(np.exp(list)+1e-6)))
 
 def load_json(path):
     import json

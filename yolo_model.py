@@ -391,12 +391,25 @@ class YOLO_V3():
         return total_loss
 
     def train_detection(self,train_generator,val_generator):
-        filepath = "./tmp/detection_ckpt_{epoch:02d}_{val_acc:.2f}.h5"
+        filepath = "./tmp/detection_ckpt_{epoch:02d}_{loss:.2f}.h5"
 
-        checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_acc',
+        checkpoint = ModelCheckpoint(filepath=filepath, monitor='loss',
                                      verbose=1, save_best_only=False)
+        def lr_sch(epoch):
+            # 200 total
+            return  1e-3
+            if epoch < 50:
+                return 1e-3
+            if 50 <= epoch < 100:
+                return 1e-4
+            if epoch >= 100:
+                return 1e-5
+        lr_scheduler = LearningRateScheduler(lr_sch)
+
+        tb = TensorBoard(log_dir=self.config['train']['log_dir'],write_graph=False)
+
         self.model.compile(optimizer=Adam(),loss=[self.yolo_loss,self.yolo_loss,self.yolo_loss])
-        self.model.fit_generator(generator=train_generator,epochs=self.config['train']['epochs'],callbacks=[])
+        self.model.fit_generator(generator=train_generator,epochs=self.config['train']['epochs'],callbacks=[checkpoint,lr_scheduler,tb])
 
     def evaluate(self,generator):
         print('开始评估模型性能')
