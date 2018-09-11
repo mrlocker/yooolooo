@@ -328,7 +328,7 @@ class YOLO_V3():
         print("cxcy shape:",cxcy.shape)
         y_pred_xy += cxcy
         # 1.2 prepare y_pred_wh
-        y_pred_wh = tf.exp(y_pred[..., 2:4])  # scale confidence to 0~1 #（4，13，13，3，1）
+        y_pred_wh = tf.exp(tf.sigmoid(y_pred[..., 2:4]))  # scale confidence to 0~1 #（4，13，13，3，1）
         p_wh = self.prepare_anchors_wh(y_pred_wh)
         y_pred_wh = y_pred_wh * p_wh
         # 1.3 prepare y_pred confidence classes
@@ -504,7 +504,8 @@ class YOLO_V3():
             cxcy = sess.run(cxcy)
             p_wh = sess.run(p_wh)
         bboxes_xy = sigmoid(bboxes_xy)+cxcy
-        bboxes_wh = np.exp(bboxes_wh)*p_wh
+        # bboxes_wh = np.exp(bboxes_wh)*p_wh # old without sigmoid
+        bboxes_wh = np.exp(sigmoid(bboxes_wh))*p_wh
 
         # c_mask = np.zeros(shape=bboxes_xy.shape)
         # for batch_i in range(c_mask.shape[0]):
@@ -566,11 +567,11 @@ class YOLO_V3():
                     compressed_sorted_bboxes = sorted_bboxes[0:i]
                     break
             sorted_bboxes = compressed_sorted_bboxes
-            print('压缩后的bboxes:', len(compressed_sorted_bboxes))
+            print('压缩后的bboxes个数:', len(compressed_sorted_bboxes))
             # 3. 开始nms
             # final_bboxes = self.do_nms(sorted_bboxes,self.config['model']['nms_iou_threshold'])
             final_bboxes = self.do_tf_nms(sorted_bboxes,self.config['model']['nms_iou_threshold'])
-            print('final bboxes count:', len(final_bboxes))
+            print('NMS过后的bboxes个数:', len(final_bboxes))
             if self.debug:
                 img = np.zeros(shape=[self.input_size[0], self.input_size[1], 3], dtype=np.uint8)
                 after_img = draw_bboxes2(img, final_bboxes)
