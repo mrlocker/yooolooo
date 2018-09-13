@@ -4,8 +4,8 @@
           "type":"detection",
           "pretrain_backbone":"weights/darknet53.h5",
           "pretrain_full":"",
-          "final_model_weights":"tmp/detection_tmp.h5",
-          "batch_size":8,
+          "final_model_weights":"",
+          "batch_size":64,
           "image_size":[416,416],
           "grid":13,
           "anchors": [10,13,  16,30,  33,23,  30,61,  62,45,  59,119,  116,90,  156,198,  373,326],
@@ -18,13 +18,14 @@
             "WaterStain",
             "VerticalCrack"
         ],
-        "threshold":0.2,
+        "threshold":0.7,
         "nms_iou_threshold":0.5,
-        "max_objects_per_image":128
+        "max_objects_per_image":16
       },
       "train":{
-          "epochs":10,
-          "data_folder":"D:/TSY/Data/USTBdata/train"
+          "epochs":500,
+          "data_folder":"D:/TSY/Data/USTBdata/train",
+          "log_dir":"./logs/913a"
       },
       "val":{
           "data_folder":"D:/TSY/Data/USTBdata/test"

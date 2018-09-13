@@ -143,7 +143,7 @@ class St_Generator(Sequence):
         # 至此，扩增完毕
 
         for i,img in enumerate(self.aug_imgs):
-            x_batch[i] = img
+            x_batch[i] = utils.preprocess(img)
         y_batches = self.create_y_true(self.aug_bbses,self.aug_labels,self.anchors)
         return x_batch,y_batches #ybatches order in Large anchor,medium anchor,small anchor
 
@@ -213,8 +213,6 @@ class St_Generator(Sequence):
             ymin = bbox_node.find('ymin').text
             xmax = bbox_node.find('xmax').text
             ymax = bbox_node.find('ymax').text
-
-
 
             annos.append({
                 'xmin': int(xmin),
@@ -319,7 +317,7 @@ def draw_aug_bboxes(aug_img, bboxes,labels):
     return aug_img
 
 if __name__ == "__main__":
-    config = load_json('miniset/config_detection_miniset.json')
+    config = load_json('configs/config_detection_defects_winK40.json')
     # image_extention='bmp'
     # img_list = get_dir_filelist_by_extension(dir=config['train']['data_folder']+'/images',ext=image_extention)
     # img_list.sort()
@@ -338,6 +336,6 @@ if __name__ == "__main__":
         img = gen.aug_imgs[i]
         img_annos = gen.aug_bbses[i]
         img_labels = gen.aug_labels[i]
-        after_img = draw_aug_bboxes(img,img_annos,img_labels)
+        after_img = draw_aug_bboxes(utils.afterprocess(one_batch[0][i]).astype(np.uint8),img_annos,img_labels)
         cv2.imshow('img',after_img)
         cv2.waitKey(0)

@@ -5,7 +5,8 @@ import imgaug as ia
 
 def preprocess(x):
     return ((x/255)-0.5)*2
-
+def afterprocess(x):
+    return (x/2+0.5)*255
 def softmax(list):
     e1 = np.exp(list)
     d2 = np.sum(e1,axis=-1,keepdims=True)

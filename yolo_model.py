@@ -83,6 +83,10 @@ class YOLO_V3():
             self.construct_detection_model()
             self.anchors = self.config['model']['anchors']
         self.load_pretrain_weights()
+        sess = tf.Session()
+        init_op = tf.global_variables_initializer()
+        sess.run(init_op)
+        self.sess = sess
 
     def construct_backbone(self,inputs):
         # 该主干网络和yolo v3论文上花的那个图一模一样。不包括最后三层，那三层放到了前端里面
@@ -412,8 +416,9 @@ class YOLO_V3():
         self.model.fit_generator(generator=train_generator,epochs=self.config['train']['epochs'],callbacks=[checkpoint,lr_scheduler,tb])
 
     def evaluate(self,generator):
+
         print('开始评估模型性能')
-        # self.load_weights(self.config['model']['final_model_weights']) TODO:临时注释，正式版需取消注释
+        self.load_weights(self.config['model']['final_model_weights'])# TODO:临时注释，正式版需取消注释
         print('载入完整已训练模型')
         # pr_result = self.model.predict_generator(generator)# 这个函数暂时不用，因为无法获取ground truth
         total_steps = len(generator)
@@ -427,7 +432,7 @@ class YOLO_V3():
             x,y = generator.__getitem__(i)
             bboxes = generator.aug_bbses
             labels = generator.aug_labels
-            raw_outputs = self.model.predict_on_batch(x)#TODO:看来evluate_genenrator这个函数需要自己写了。因为要获取truth信息
+            raw_outputs = self.model.predict_on_batch(x)
             winners = self.inference(raw_outputs)
             batch_size = len(bboxes)
 
@@ -446,6 +451,13 @@ class YOLO_V3():
                     b.confidence = -1 # means ground truth
                     gts.append(b)
                 detections = winners[j]
+                if self.debug:
+                    origin_img = afterprocess(x[j])
+                    origin_img = origin_img.astype(np.uint8)
+                    img = draw_bboxes2(origin_img,gts,color=(0,255,0))#gts
+                    img2 = draw_bboxes2(img,detections,color=(255,0,0))#detections
+                    cv2.imshow('detection result',img2)
+                    cv2.waitKey(0)
                 r,gt_count = single_image_detection_evaluate(gts,detections,self.classes)
                 for c in self.classes:
                     cls_result[c].extend(r[c])
@@ -572,11 +584,11 @@ class YOLO_V3():
             # final_bboxes = self.do_nms(sorted_bboxes,self.config['model']['nms_iou_threshold'])
             final_bboxes = self.do_tf_nms(sorted_bboxes,self.config['model']['nms_iou_threshold'])
             print('NMS过后的bboxes个数:', len(final_bboxes))
-            if self.debug:
-                img = np.zeros(shape=[self.input_size[0], self.input_size[1], 3], dtype=np.uint8)
-                after_img = draw_bboxes2(img, final_bboxes)
-                cv2.imshow('after img', after_img)
-                cv2.waitKey(0)
+            # if self.debug:
+            #     img = np.zeros(shape=[self.input_size[0], self.input_size[1], 3], dtype=np.uint8)
+            #     after_img = draw_bboxes2(img, final_bboxes)
+            #     cv2.imshow('after img', after_img)
+            #     cv2.waitKey(0)
             batch_winners.append(final_bboxes)
         return batch_winners
     def do_nms(self,sorted_bboxes,thresh):
@@ -632,19 +644,18 @@ class YOLO_V3():
                                      iou_threshold=thresh)
         bboxes_on_image = []
         # 初始化所有variables 的op
-        init_op = tf.global_variables_initializer()
-        with tf.Session() as sess:
-            sess.run(init_op)
-            indices = sess.run(selected_indices)
-            for i in range(indices.shape[0]):
-                bbox = Bbox()
-                bbox.x1 = int(b[indices[i]][0])
-                bbox.y1 = int(b[indices[i]][1])
-                bbox.x2 = int(b[indices[i]][2])
-                bbox.y2 = int(b[indices[i]][3])
-                bbox.label = self.config['model']['classes'][np.argmax(b[indices[i]][4:])]
-                bbox.confidence = float(np.max(b[indices[i]][4:]))
-                bboxes_on_image.append(bbox)
+        # with tf.get_default_session() as sess:
+        sess = self.sess
+        indices = sess.run(selected_indices)
+        for i in range(indices.shape[0]):
+            bbox = Bbox()
+            bbox.x1 = int(b[indices[i]][0])
+            bbox.y1 = int(b[indices[i]][1])
+            bbox.x2 = int(b[indices[i]][2])
+            bbox.y2 = int(b[indices[i]][3])
+            bbox.label = self.config['model']['classes'][np.argmax(b[indices[i]][4:])]
+            bbox.confidence = float(np.max(b[indices[i]][4:]))
+            bboxes_on_image.append(bbox)
         return bboxes_on_image
     def do_mAP(self,aps):
         #计算mAP，输入的bboxes应为经过nms抑制过的最终bboxes输出，即self.inference的输出
