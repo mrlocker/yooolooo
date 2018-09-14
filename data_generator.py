@@ -128,11 +128,13 @@ class St_Generator(Sequence):
         images_bboxes = []
         images_labels = []
         for i in range(self.batch_size):
-            img = load_img(self.image_anno_list[idx+i]['image_path'])
+            real_index = idx*self.batch_size+i
+            # print("real_index:",real_index,"image_path:",self.image_anno_list[real_index]['image_path'])
+            img = load_img(self.image_anno_list[real_index]['image_path'])
             img = np.array(img)
             images.append(img)
 
-            annos = self.parse_annotation(path=self.image_anno_list[idx+i]['anno_path'])
+            annos = self.parse_annotation(path=self.image_anno_list[real_index]['anno_path'])
             bboxes,labels = self.annos_to_bbox(annos)
             images_bboxes.append(bboxes)
             images_labels.append(labels)
@@ -317,7 +319,7 @@ def draw_aug_bboxes(aug_img, bboxes,labels):
     return aug_img
 
 if __name__ == "__main__":
-    config = load_json('configs/config_detection_defects_winK40.json')
+    config = load_json('configs/config_detection_defects.json')
     # image_extention='bmp'
     # img_list = get_dir_filelist_by_extension(dir=config['train']['data_folder']+'/images',ext=image_extention)
     # img_list.sort()
@@ -331,11 +333,12 @@ if __name__ == "__main__":
     #     })
     gen = St_Generator(config)
     print('len:',len(gen))
-    one_batch = gen.__getitem__(0)
-    for i in range(config['model']['batch_size']):
-        img = gen.aug_imgs[i]
-        img_annos = gen.aug_bbses[i]
-        img_labels = gen.aug_labels[i]
-        after_img = draw_aug_bboxes(utils.afterprocess(one_batch[0][i]).astype(np.uint8),img_annos,img_labels)
-        cv2.imshow('img',after_img)
-        cv2.waitKey(0)
+    for bi in range(len(gen)):
+        one_batch = gen.__getitem__(bi)
+        for i in range(config['model']['batch_size']):
+            img = gen.aug_imgs[i]
+            img_annos = gen.aug_bbses[i]
+            img_labels = gen.aug_labels[i]
+            after_img = draw_aug_bboxes(utils.afterprocess(one_batch[0][i]).astype(np.uint8),img_annos,img_labels)
+            cv2.imshow('img%d'%i,after_img)
+            cv2.waitKey(0)
