@@ -9,6 +9,7 @@ import imgaug as ia
 import utils
 import cv2
 import xml.etree.ElementTree as ET
+from yolo_model import *
 
 class SquarePad(iaa.Augmenter):
 
@@ -320,17 +321,7 @@ def draw_aug_bboxes(aug_img, bboxes,labels):
 
 if __name__ == "__main__":
     config = load_json('configs/config_detection_defects.json')
-    # image_extention='bmp'
-    # img_list = get_dir_filelist_by_extension(dir=config['train']['data_folder']+'/images',ext=image_extention)
-    # img_list.sort()
-    # all_image_and_anno_paths = []
-    # for img_path in img_list:
-    #     xmlname = img_path.split('/')[-1].replace(image_extention,'xml')
-    #     anno_path = config['train']['data_folder']+'/annotations/'+xmlname
-    #     all_image_and_anno_paths.append({
-    #         'image_path':img_path,
-    #         'anno_path':anno_path
-    #     })
+
     gen = St_Generator(config)
     print('len:',len(gen))
     for bi in range(len(gen)):
@@ -339,6 +330,10 @@ if __name__ == "__main__":
             img = gen.aug_imgs[i]
             img_annos = gen.aug_bbses[i]
             img_labels = gen.aug_labels[i]
-            after_img = draw_aug_bboxes(utils.afterprocess(one_batch[0][i]).astype(np.uint8),img_annos,img_labels)
+            x = one_batch[0]
+            y = one_batch[1]
+            yolo = YOLO_V3(config)
+            winners = yolo.inference(y)
+            after_img = draw_aug_bboxes(utils.afterprocess(x[i]).astype(np.uint8),img_annos,img_labels)
             cv2.imshow('img%d'%i,after_img)
             cv2.waitKey(0)

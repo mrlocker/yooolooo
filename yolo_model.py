@@ -511,7 +511,7 @@ class YOLO_V3():
         bboxes_wh = raw_output[..., 2:4]
         cxcy = self.prepare_cxcy(bboxes_xy)
         p_wh = self.prepare_anchors_wh(tf.convert_to_tensor(bboxes_wh))
-        with tf.Session() as sess:
+        with self.sess as sess:
             # sess.run(tf.global_variables_initializer())
             cxcy = sess.run(cxcy)
             p_wh = sess.run(p_wh)
@@ -572,6 +572,8 @@ class YOLO_V3():
 
             # 2.按score排序。（以每个bbox里面最大的score记）
             sorted_bboxes = sorted(all_bboxes, key=lambda item: np.max(item[4:]), reverse=True)
+            print('原始输出的bboxes个数:', len(sorted_bboxes))
+
             # 2.5 compress 移除class_score小于thresh的bbox
             compressed_sorted_bboxes = []
             for i, box in enumerate(sorted_bboxes):
