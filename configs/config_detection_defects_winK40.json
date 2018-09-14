@@ -3,9 +3,9 @@
           "debug":false,
           "type":"detection",
           "pretrain_backbone":"weights/darknet53.h5",
-          "pretrain_full":"",
+          "pretrain_full":"tmp/914a_detection_ckpt_56_1.94.h5",
           "final_model_weights":"",
-          "batch_size":64,
+          "batch_size":16,
           "image_size":[416,416],
           "grid":13,
           "anchors": [10,13,  16,30,  33,23,  30,61,  62,45,  59,119,  116,90,  156,198,  373,326],
@@ -23,9 +23,10 @@
         "max_objects_per_image":16
       },
       "train":{
-          "epochs":500,
+          "learning_rate":1e-5,
+          "epochs":100,
           "data_folder":"D:/TSY/Data/USTBdata/train",
-          "log_dir":"./logs/913a"
+          "log_dir":"./logs/914c"
       },
       "val":{
           "data_folder":"D:/TSY/Data/USTBdata/test"
