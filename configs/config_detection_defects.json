@@ -1,10 +1,10 @@
  {
       "model":{
-          "debug":false,
+          "debug":true,
           "type":"detection",
-          "pretrain_backbone":"weights/darknet53.h5",
+          "pretrain_backbone":"",
           "pretrain_full":"",
-          "final_model_weights":"tmp/detection_tmp.h5",
+          "final_model_weights":"/Volumes/即兴音乐人/914d_detection_ckpt_103_1.70.h5",
           "batch_size":4,
           "image_size":[416,416],
           "grid":13,
@@ -18,15 +18,15 @@
             "WaterStain",
             "VerticalCrack"
         ],
-        "threshold":0.2,
+        "threshold":0.7,
         "nms_iou_threshold":0.5,
-        "max_objects_per_image":128
+        "max_objects_per_image":16
       },
       "train":{
           "epochs":10,
           "data_folder":"/Users/shidanlifuhetian/All/data/KHB_ANNO/USTBdata/train"
       },
       "val":{
-          "data_folder":"/Users/shidanlifuhetian/All/data/KHB_ANNO/USTBdata/test"
+          "data_folder":"./miniset"
       }
   }
