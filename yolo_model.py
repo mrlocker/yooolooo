@@ -413,7 +413,7 @@ class YOLO_V3():
         tb = TensorBoard(log_dir=self.config['train']['log_dir'],write_graph=False)
 
         self.model.compile(optimizer=Adam(),loss=[self.yolo_loss,self.yolo_loss,self.yolo_loss])
-        self.model.fit_generator(generator=train_generator,steps_per_epoch=2*len(train_generator),epochs=self.config['train']['epochs'],callbacks=[checkpoint,lr_scheduler,tb])
+        self.model.fit_generator(generator=train_generator,steps_per_epoch=1*len(train_generator),epochs=self.config['train']['epochs'],callbacks=[checkpoint,lr_scheduler,tb])
 
     def evaluate(self,generator):
 

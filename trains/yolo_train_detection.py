@@ -9,15 +9,19 @@ if __name__ == "__main__":
 
     yolo = YOLO_V3(config=config)
 
-    trainable_point = False
-    for layer in yolo.backbone.layers:
-        if layer.name == "conv2d_44":# 3x3/2 filters:1024
-            trainable_point = True
-        if trainable_point == True:
-            layer.trainable = True
-        else:
+    if yolo.config['train']['mode'] == "transfer learning":
+        print("transfer learning")
+        for layer in yolo.backbone.layers:
             layer.trainable = False
-    # contiune_training = False
-    # if contiune_training:
-    #     yolo.model.load_weights('')
+    if yolo.config['train']['mode'] == "fine tune":
+        print("fine tune")
+        trainable_point = False
+        for layer in yolo.backbone.layers:
+            if layer.name == "conv2d_44":# 3x3/2 filters:1024
+                trainable_point = True
+            if trainable_point == True:
+                layer.trainable = True
+            else:
+                layer.trainable = False
+
     yolo.train_detection(gen,val_gen)
