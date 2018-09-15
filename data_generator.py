@@ -275,8 +275,10 @@ class St_Generator(Sequence):
                 cell_size = self.image_size[0] / (self.grid*(2**y_batch_index))
 
                 # calc cell index start from 0
+
                 cx = int(np.floor(bbox.center_x/cell_size))
                 cy = int(np.floor(bbox.center_y/cell_size))
+                print('i:%s j:%s cx:%s cy:%s'%(i,j,cx,cy))
                 # scale to grid unit
                 x_new = bbox.center_x/cell_size
                 y_new = bbox.center_y/cell_size
@@ -318,6 +320,16 @@ def draw_aug_bboxes(aug_img, bboxes,labels):
         cv2.circle(aug_img,center=(int(rect.center_x),int(rect.center_y)),radius=1,color=(0,0,255),thickness=-1)
 
     return aug_img
+def draw_aug_bboxes2(aug_img, bboxes):
+    pred_color = (255,255,255)
+    for i,rect in enumerate(bboxes):
+        cv2.rectangle(aug_img, pt1=(rect.x1, rect.y1), pt2=(rect.x2, rect.y2), color=pred_color, thickness=2)
+        cv2.putText(aug_img, str(rect.confidence) + ' ', (rect.x1 + 2, rect.y1 + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, pred_color)
+        center_x = int((rect.x1 + rect.x2)/2)
+        center_y = int((rect.y1 + rect.y2)/2)
+        cv2.circle(aug_img,center=(center_x,center_y),radius=1,color=(0,0,255),thickness=-1)
+
+    return aug_img
 
 if __name__ == "__main__":
     config = load_json('configs/config_detection_defects.json')
@@ -334,6 +346,6 @@ if __name__ == "__main__":
             y = one_batch[1]
             yolo = YOLO_V3(config)
             winners = yolo.inference(y)
-            after_img = draw_aug_bboxes(utils.afterprocess(x[i]).astype(np.uint8),img_annos,img_labels)
+            after_img = draw_aug_bboxes2(utils.afterprocess(x[i]).astype(np.uint8),winners[i])
             cv2.imshow('img%d'%i,after_img)
             cv2.waitKey(0)

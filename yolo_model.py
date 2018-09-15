@@ -55,6 +55,7 @@ class Basic_Route():# same to [route] in yolov3.cfg
 class Basic_Detection():
     def __call__(self, shit):
         shit = Reshape((shit.shape.dims[1].value, shit.shape.dims[2].value, 3, int(shit.shape.dims[3].value / 3)))(shit)
+        # 这里继续将输出的tensor进行处理，处理完过后要和data generator 输出y_batch格式一模一样。即每个rice里面x，y是以1为单位的值，w, h是以grid为单位的值
         return shit
 class Bbox():
     def __init__(self,coord=(0,0,0,0),label="Undefined",confidence = 0):
@@ -429,11 +430,17 @@ class YOLO_V3():
             cls_result[c]=[]
             gt_counts[c] = 0
         for i in range(total_steps):
+            # step1. 生成一批图像数据，x为图像，均已归一化至-1~1。y为label。x，y，w，h均为归一化的值。即将原图
+            # 转化为13*13后原始坐标按比例缩放后的大小。
             x,y = generator.__getitem__(i)
             bboxes = generator.aug_bbses
             labels = generator.aug_labels
+            # step2. 网络预测，给出粗糙输出
             raw_outputs = self.model.predict_on_batch(x)
-            winners = self.inference(raw_outputs)
+            # step3. 解码粗糙输出，x,y,w,h均作了计算。这里输出的内容应该和data generator输出的ybatch一样
+            decoded_outputs = self.decode_raw_output(raw_outputs)
+            # step4. 这里最终输出的应该是ready for draw 的bbox
+            winners = self.inference(decoded_outputs)
             batch_size = len(bboxes)
 
             for j in range(batch_size):# iterate each image
@@ -543,22 +550,41 @@ class YOLO_V3():
         # bboxes_wh = bboxes_wh * anchors_big
         # print('bboxes_wh:',bboxes_wh[1,3,7,1])
         # scale to real world size
-        cell_size = self.input_size[0]/grid
-        bboxes_xy *= cell_size
-        bboxes_wh *= cell_size
+        # cell_size = self.input_size[0]/grid
+        # bboxes_xy *= cell_size
+        # bboxes_wh *= cell_size
         classes_score = self.calc_classes_score(raw_output)
         bboxes = np.concatenate((bboxes_xy, bboxes_wh, classes_score), axis=-1)
 
         return bboxes
         # sort
-    def inference(self,output):
+
+    def decode_raw_output(self,raw_output):
+        # 输入output为一个batch的数据
+        r1 = self.regulize_single_raw_output(raw_output[0])
+        r2 = self.regulize_single_raw_output(raw_output[1])
+        r3 = self.regulize_single_raw_output(raw_output[2])
+        r  = [r1,r2,r3]
+        return r
+    def inference(self, decoded_output):
         # 输入output为一个batch的数据
         thresh = self.config['model']['threshold']
-        r1 = self.regulize_single_raw_output(output[0])
-        r2 = self.regulize_single_raw_output(output[1])
-        r3 = self.regulize_single_raw_output(output[2])
-        r  = [r1,r2,r3]
+        r = decoded_output
         batch_winners = []
+        grid0 = decoded_output[0].shape[1]
+        grid1 = decoded_output[1].shape[1]
+        grid2 = decoded_output[2].shape[1]
+
+        cell_size0 = self.input_size[0] / grid0
+        cell_size1 = self.input_size[0] / grid1
+        cell_size2 = self.input_size[0] / grid2
+        # bboxes_xy *= cell_size
+        # bboxes_wh *= cell_size
+
+        r[0][...,0:4] *= cell_size0
+        r[1][...,0:4] *= cell_size1
+        r[2][...,0:4] *= cell_size2
+
         for batch_i in range(r[0].shape[0]):
             # 1.放一起
             all_bboxes = []
@@ -634,12 +660,17 @@ class YOLO_V3():
                 break
         return final_bboxes
     def do_tf_nms(self,sorted_bboxes,thresh):
+        # sorted bboxes 格式是center_x,center_y,width,height
         b = np.array(sorted_bboxes)
         coord = b[...,0:4]
-        x1 = coord[...,0:1]
-        y1 = coord[...,1:2]
-        x2 = coord[...,2:3]
-        y2 = coord[...,3:4]
+        center_x = coord[...,0:1]
+        center_y = coord[...,1:2]
+        width = coord[...,2:3]
+        height = coord[...,3:4]
+        x1 = center_x - width/2
+        x2 = center_x + width/2
+        y1 = center_y - height/2
+        y2 = center_y + height/2
         new_coord = np.concatenate([y1,x1,y2,x2],axis=-1)
         scores = np.max(b[...,4:],axis=-1)
         selected_indices = tf.image.non_max_suppression(new_coord,scores,max_output_size=self.config['model']['max_objects_per_image'],
@@ -651,10 +682,14 @@ class YOLO_V3():
         indices = sess.run(selected_indices)
         for i in range(indices.shape[0]):
             bbox = Bbox()
-            bbox.x1 = int(b[indices[i]][0])
-            bbox.y1 = int(b[indices[i]][1])
-            bbox.x2 = int(b[indices[i]][2])
-            bbox.y2 = int(b[indices[i]][3])
+            center_x = b[indices[i]][0]
+            center_y = b[indices[i]][1]
+            width = b[indices[i]][2]
+            height = b[indices[i]][3]
+            bbox.x1 = int(center_x-width/2)
+            bbox.y1 = int(center_y-height/2)
+            bbox.x2 = int(center_x+width/2)
+            bbox.y2 = int(center_y+height/2)
             bbox.label = self.config['model']['classes'][np.argmax(b[indices[i]][4:])]
             bbox.confidence = float(np.max(b[indices[i]][4:]))
             bboxes_on_image.append(bbox)
