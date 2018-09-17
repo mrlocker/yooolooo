@@ -409,12 +409,17 @@ class YOLO_V3():
                 return 1e-4
             if epoch >= 100:
                 return 1e-5
+        lr_reducer = ReduceLROnPlateau(monitor='loss', factor=0.2, patience=5,
+                                       mode='min', min_lr=1e-6)
         lr_scheduler = LearningRateScheduler(lr_sch)
 
         tb = TensorBoard(log_dir=self.config['train']['log_dir'],write_graph=False)
 
-        self.model.compile(optimizer=Adam(),loss=[self.yolo_loss,self.yolo_loss,self.yolo_loss])
-        self.model.fit_generator(generator=train_generator,steps_per_epoch=1*len(train_generator),epochs=self.config['train']['epochs'],callbacks=[checkpoint,lr_scheduler,tb])
+        self.model.compile(optimizer=Adam(lr=self.config['train']['learning_rate']),loss=[self.yolo_loss,self.yolo_loss,self.yolo_loss])
+        self.model.fit_generator(generator=train_generator,
+                                 steps_per_epoch=1*len(train_generator),
+                                 epochs=self.config['train']['epochs'],
+                                 callbacks=[checkpoint,lr_reducer,tb])
 
     def evaluate(self,generator):
 
