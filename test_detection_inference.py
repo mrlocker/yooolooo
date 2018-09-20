@@ -7,6 +7,8 @@ from data_generator import St_Generator
 
 if __name__ == "__main__":
     config = load_json('./configs/config_detection_defects_winK40.json')
+    config['model']['debug'] = True
+    config['model']['batch_size']=4
     gen = St_Generator(config,phase="train")
     val_gen = St_Generator(config,phase="test")
 

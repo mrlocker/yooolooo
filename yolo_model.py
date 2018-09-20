@@ -55,7 +55,7 @@ class Basic_Route():# same to [route] in yolov3.cfg
 class Basic_Detection():
     def __call__(self, shit):
         shit = Reshape((shit.shape.dims[1].value, shit.shape.dims[2].value, 3, int(shit.shape.dims[3].value / 3)))(shit)
-        # 这里继续将输出的tensor进行处理，处理完过后要和data generator 输出y_batch格式一模一样。即每个rice里面x，y是以1为单位的值，w, h是以grid为单位的值
+        # 这里继续将输出的tensor进行处理，处理完过后要和data generator 尺寸一模一样
         return shit
 class Bbox():
     def __init__(self,coord=(0,0,0,0),label="Undefined",confidence = 0):
@@ -338,7 +338,9 @@ class YOLO_V3():
         y_pred_wh = y_pred_wh * p_wh
         # 1.3 prepare y_pred confidence classes
         y_pred_confidence = tf.sigmoid(y_pred[..., 4:5])
+        # 1.4 prepare confidence
         y_pred_classes = y_pred[..., 5:]
+        y_pred_classes_soft = tf.nn.softmax(y_pred_classes, axis=-1)
 
         y_true_xy = y_true[..., 0:2]
         y_true_wh = y_true[..., 2:4]
@@ -364,7 +366,6 @@ class YOLO_V3():
         con_loss = tf.reduce_sum(tf.multiply(con_square, obj_mask))
         no_con_loss = tf.reduce_sum(tf.multiply(con_square, no_obj_mask))
         # 5. calc classes loss
-        y_pred_classes_soft = tf.nn.softmax(y_pred_classes, axis=-1)
         classes_minus = tf.subtract(y_true_classes, y_pred_classes_soft)
         classes_square = tf.square(classes_minus)
         classes_loss = tf.reduce_sum(tf.multiply(classes_square, obj_mask))
@@ -419,7 +420,7 @@ class YOLO_V3():
         self.model.fit_generator(generator=train_generator,
                                  steps_per_epoch=1*len(train_generator),
                                  epochs=self.config['train']['epochs'],
-                                 callbacks=[checkpoint,lr_reducer,tb])
+                                 callbacks=[checkpoint,lr_scheduler,tb])
 
     def evaluate(self,generator):
 
@@ -523,10 +524,10 @@ class YOLO_V3():
         bboxes_wh = raw_output[..., 2:4]
         cxcy = self.prepare_cxcy(bboxes_xy)
         p_wh = self.prepare_anchors_wh(tf.convert_to_tensor(bboxes_wh))
-        with self.sess as sess:
+        #with self.sess as sess:
             # sess.run(tf.global_variables_initializer())
-            cxcy = sess.run(cxcy)
-            p_wh = sess.run(p_wh)
+        cxcy = self.sess.run(cxcy)
+        p_wh = self.sess.run(p_wh)
         bboxes_xy = sigmoid(bboxes_xy)+cxcy
         # bboxes_wh = np.exp(bboxes_wh)*p_wh # old without sigmoid
         bboxes_wh = np.exp(sigmoid(bboxes_wh))*p_wh
@@ -666,6 +667,8 @@ class YOLO_V3():
         return final_bboxes
     def do_tf_nms(self,sorted_bboxes,thresh):
         # sorted bboxes 格式是center_x,center_y,width,height
+        if len(sorted_bboxes)==0:
+            return []
         b = np.array(sorted_bboxes)
         coord = b[...,0:4]
         center_x = coord[...,0:1]
@@ -681,10 +684,8 @@ class YOLO_V3():
         selected_indices = tf.image.non_max_suppression(new_coord,scores,max_output_size=self.config['model']['max_objects_per_image'],
                                      iou_threshold=thresh)
         bboxes_on_image = []
-        # 初始化所有variables 的op
-        # with tf.get_default_session() as sess:
-        sess = self.sess
-        indices = sess.run(selected_indices)
+
+        indices = self.sess.run(selected_indices)
         for i in range(indices.shape[0]):
             bbox = Bbox()
             center_x = b[indices[i]][0]
