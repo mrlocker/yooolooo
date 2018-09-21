@@ -336,12 +336,13 @@ class YOLO_V3():
         y_pred_wh = tf.exp(tf.sigmoid(y_pred[..., 2:4]))  # scale confidence to 0~1 #（4，13，13，3，1）
         p_wh = self.prepare_anchors_wh(y_pred_wh)
         y_pred_wh = y_pred_wh * p_wh
-        # 1.3 prepare y_pred confidence classes
+        # 1.3 prepare y_pred confidence
         y_pred_confidence = tf.sigmoid(y_pred[..., 4:5])
-        # 1.4 prepare confidence
+        # 1.4 prepare y_pred classes
         y_pred_classes = y_pred[..., 5:]
         y_pred_classes_soft = tf.nn.softmax(y_pred_classes, axis=-1)
 
+        # prepare y_true
         y_true_xy = y_true[..., 0:2]
         y_true_wh = y_true[..., 2:4]
         y_true_confidence = y_true[..., 4:5]
@@ -403,20 +404,23 @@ class YOLO_V3():
                                      verbose=1, save_best_only=False)
         def lr_sch(epoch):
             # 200 total
-            return  self.config['train']['learning_rate']
-            if epoch < 50:
-                return 1e-3
-            if 50 <= epoch < 100:
-                return 1e-4
-            if epoch >= 100:
-                return 1e-5
+            lr = self.config['train']['learning_rate']
+            total_epochs = self.config['train']['epochs']
+            if epoch < total_epochs/3:
+                return lr
+            if total_epochs/3 <= epoch < total_epochs/3*2:
+                return lr*0.1
+            if epoch >= total_epochs/3*2:
+                return lr*0.01
         lr_reducer = ReduceLROnPlateau(monitor='loss', factor=0.2, patience=5,
                                        mode='min', min_lr=1e-6)
         lr_scheduler = LearningRateScheduler(lr_sch)
 
         tb = TensorBoard(log_dir=self.config['train']['log_dir'],write_graph=False)
 
-        self.model.compile(optimizer=Adam(lr=self.config['train']['learning_rate']),loss=[self.yolo_loss,self.yolo_loss,self.yolo_loss])
+        self.model.compile(optimizer=Adam(lr=self.config['train']['learning_rate'],
+                                          beta_1=0.9,beta_2=0.999),
+                           loss=[self.yolo_loss,self.yolo_loss,self.yolo_loss])
         self.model.fit_generator(generator=train_generator,
                                  steps_per_epoch=1*len(train_generator),
                                  epochs=self.config['train']['epochs'],
