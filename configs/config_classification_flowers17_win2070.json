@@ -3,7 +3,7 @@
           "type":"classification",
           "output_units":17,
           "image_size":[256,256],
-          "pretrain_backbone":"weights/darknet53.h5",
+          "pretrain_backbone":"weights/yolov3.h5",
           "pretrain_full":"",
           "classes":[
             "flower_A", "flower_B", "flower_C",
@@ -18,9 +18,12 @@
       },
       "train":{
           "epochs":200,
-          "data_folder":"D:/TSY/Data/flowers17_tsycnh/train"
+          "data_folder":"C:/All/Data/flowers17_tsycnh/train"
       },
       "val":{
-          "data_folder":"D:/TSY/Data/flowers17_tsycnh/validation"
-      }
+          "data_folder":"C:/All/Data/flowers17_tsycnh/validation"
+      },
+   "test": {
+     "data_folder":"C:/All/Data/flowers17_tsycnh/test"
+   }
   }

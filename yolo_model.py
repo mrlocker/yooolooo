@@ -1,9 +1,9 @@
 import keras
 from keras.layers import Conv2D,Input,BatchNormalization,\
     LeakyReLU,Add,GlobalAveragePooling2D,Dense,Activation,\
-    UpSampling2D,Concatenate,Reshape
+    UpSampling2D,Concatenate,Reshape,Dropout
 from keras.models import Model,load_model
-from keras.optimizers import Adam
+from keras.optimizers import Adam,RMSprop
 from keras import backend as K
 from keras.preprocessing.image import load_img
 from keras.losses import categorical_crossentropy,mean_squared_error
@@ -144,39 +144,40 @@ class YOLO_V3():
     def construct_classification_model(self):
         self.shits.append(GlobalAveragePooling2D()(self.shits[-1]))
         output_units = self.config['model']['output_units']
-        logits = Dense(units=output_units)(self.shits[-1])
+        # self.shits.append(Dropout(0.5)(self.shits[-1]))
+
+        logits = Dense(units=output_units,activation="softmax")(self.shits[-1])
         self.model = Model(inputs=self.inputs,outputs=logits)
-        self.model.summary()
-
-        plot_model(self.model)
         print("分类网络组建完毕")
-    def train(self,train_generator,val_generator):
+    def train(self,train_generator,val_generator,log_dir):
         config = self.config
-        loss_func = tf.losses.softmax_cross_entropy
         filepath = "./tmp/classification_flowers_ckpt_{epoch:02d}_{val_acc:.2f}.h5"
-
         checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_acc',
                                      verbose=1, save_best_only=False)
+        #
+        # def lr_sch(epoch):
+        #     # 200 total
+        #     if epoch < 50:
+        #         return 1e-3
+        #     if 50 <= epoch < 100:
+        #         return 1e-4
+        #     if epoch >= 100:
+        #         return 1e-5
 
-        def lr_sch(epoch):
-            # 200 total
-            if epoch < 50:
-                return 1e-3
-            if 50 <= epoch < 100:
-                return 1e-4
-            if epoch >= 100:
-                return 1e-5
+        # lr_scheduler = LearningRateScheduler(lr_sch)
+        # lr_reducer = ReduceLROnPlateau(monitor='val_acc', factor=0.2, patience=5,
+        #                                mode='max', min_lr=1e-6)
+        tb = TensorBoard(log_dir=log_dir,write_graph=False)
+        callbacks = [checkpoint,tb]
+        self.model.compile(optimizer=RMSprop(1e-4),loss="categorical_crossentropy",metrics=['acc'])
+        self.model.summary()
 
-        lr_scheduler = LearningRateScheduler(lr_sch)
-        lr_reducer = ReduceLROnPlateau(monitor='val_acc', factor=0.2, patience=5,
-                                       mode='max', min_lr=1e-6)
-        tb = TensorBoard(log_dir='./logs',write_graph=False)
-        callbacks = [checkpoint, lr_scheduler, lr_reducer,tb]
-        self.model.compile(optimizer=Adam(),loss=loss_func,metrics=['accuracy'])
         self.model.fit_generator(generator=train_generator,
                                  epochs=config['train']['epochs'],
+                                 steps_per_epoch=len(train_generator),
                                  validation_data=val_generator,
-                                 validation_steps=280/self.batch_size,class_weight='auto',
+                                 validation_steps=len(val_generator),
+                                 class_weight='auto',
                                  callbacks=callbacks)
         self.model.save_weights('fl_model.h5')
     def predict_classification(self, image_path, threshold=0.5):
@@ -196,12 +197,11 @@ class YOLO_V3():
         image = np.expand_dims(np_image,axis=0)
         img = preprocess(image)
         result = self.model.predict(img)
-        r = softmax(result)
+        r = result
         cv2.imshow('result', image_for_cv2_show)
         pred_index = np.argmax(r)
-        pred = self.config['classes'][pred_index]
-        # true_index = class_indices[true_class]# get one classes's index
-        # index_classe = dict(zip(class_indices.values(), class_indices.keys()))
+        pred = self.config['model']['classes'][pred_index]
+
 
         if np.max(r) > 0.5:
             if pred == class_name:
@@ -735,14 +735,7 @@ def prepare_data(train_folder,val_folder,batch_size):
                                        horizontal_flip=True,
                                        vertical_flip=True,
                                        preprocessing_function=lambda x:((x/255)-0.5)*2)
-    val_datagen = ImageDataGenerator(rotation_range=30,
-                                       width_shift_range=0.2,
-                                       height_shift_range=0.2,
-                                       shear_range=0.2,
-                                       zoom_range=0.2,
-                                       horizontal_flip=True,
-                                       vertical_flip=True,
-                                       preprocessing_function=lambda x:((x/255)-0.5)*2)
+    val_datagen = ImageDataGenerator(preprocessing_function=lambda x:((x/255)-0.5)*2)
     # 默认的color_mode是RGB
     train_generator = train_datagen.flow_from_directory(directory=train_folder,
                                                         target_size=(256,256),batch_size=batch_size)
